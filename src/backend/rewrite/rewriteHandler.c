@@ -44,6 +44,7 @@
 #include "utils/builtins.h"
 #include "utils/lsyscache.h"
 #include "utils/rel.h"
+#include "utils/syscache.h"
 
 
 /* We use a list of these to detect recursion in RewriteQuery */
@@ -90,6 +91,8 @@ static List *matchLocks(CmdType event, Relation relation,
 						int varno, Query *parsetree, bool *hasUpdate);
 static Query *fireRIRrules(Query *parsetree, List *activeRIRs);
 static Bitmapset *adjust_view_column_set(Bitmapset *cols, List *targetlist);
+struct expand_generated_context;
+static Query *expand_generated_columns_in_query(Query *query, struct expand_generated_context *context);
 
 
 /*
@@ -974,7 +977,8 @@ rewriteTargetListIU(List *targetList,
 		if (att_tup->attgenerated)
 		{
 			/*
-			 * stored generated column will be fixed in executor
+			 * virtual generated column stores a null value; stored generated
+			 * column will be fixed in executor
 			 */
 			new_tle = NULL;
 		}
@@ -4366,6 +4370,168 @@ RewriteQuery(Query *parsetree, List *rewrite_events, int orig_rt_length)
 
 
 /*
+ * Virtual generated columns support
+ */
+
+struct expand_generated_context
+{
+	/* list of range tables, innermost last */
+	List	   *rtables;
+
+	/* incremented for every level where it's true */
+	int			ancestor_has_virtual;
+};
+
+static Node *
+expand_generated_columns_mutator(Node *node, struct expand_generated_context *context)
+{
+	if (node == NULL)
+		return NULL;
+
+	if (IsA(node, Var))
+	{
+		Var		   *v = (Var *) node;
+		Oid			relid;
+		AttrNumber	attnum;
+		List	   *rtable = list_nth_node(List,
+										   context->rtables,
+										   list_length(context->rtables) - v->varlevelsup - 1);
+
+		relid = rt_fetch(v->varno, rtable)->relid;
+		attnum = v->varattno;
+
+		if (!relid || !attnum)
+			return node;
+
+		if (get_attgenerated(relid, attnum) == ATTRIBUTE_GENERATED_VIRTUAL)
+		{
+			Relation	rt_entry_relation = table_open(relid, NoLock);
+			Oid			attcollid;
+
+			node = build_column_default(rt_entry_relation, attnum);
+			if (node == NULL)
+				elog(ERROR, "no generation expression found for column number %d of table \"%s\"",
+					 attnum, RelationGetRelationName(rt_entry_relation));
+
+			/*
+			 * If the column definition has a collation and it is different
+			 * from the collation of the generation expression, put a COLLATE
+			 * clause around the expression.
+			 */
+			attcollid = GetSysCacheOid(ATTNUM, Anum_pg_attribute_attcollation, relid, attnum, 0, 0);
+			if (attcollid && attcollid != exprCollation(node))
+			{
+				CollateExpr *ce = makeNode(CollateExpr);
+
+				ce->arg = (Expr *) node;
+				ce->collOid = attcollid;
+				ce->location = -1;
+
+				node = (Node *) ce;
+			}
+
+			IncrementVarSublevelsUp(node, v->varlevelsup, 0);
+			ChangeVarNodes(node, 1, v->varno, v->varlevelsup);
+
+			table_close(rt_entry_relation, NoLock);
+		}
+
+		return node;
+	}
+	else if (IsA(node, Query))
+	{
+		Query	   *query = (Query *) node;
+
+		query = expand_generated_columns_in_query(query, context);
+
+		return (Node *) query;
+	}
+	else
+		return expression_tree_mutator(node, expand_generated_columns_mutator, context);
+}
+
+Node *
+expand_generated_columns_in_expr(Node *node, Relation rel)
+{
+	TupleDesc	tupdesc = RelationGetDescr(rel);
+
+	if (tupdesc->constr && tupdesc->constr->has_generated_virtual)
+	{
+		RangeTblEntry *rte;
+		List	   *rtable;
+		struct expand_generated_context context;
+
+		/*
+		 * Make a dummy range table for a single relation.  For the benefit of
+		 * triggers, add the same entry twice, so it covers PRS2_OLD_VARNO and
+		 * PRS2_NEW_VARNO.
+		 */
+		rte = makeNode(RangeTblEntry);
+		rte->relid = RelationGetRelid(rel);
+		rtable = list_make2(rte, rte);
+		context.rtables = list_make1(rtable);
+
+		return expression_tree_mutator(node, expand_generated_columns_mutator, &context);
+	}
+	else
+		return node;
+}
+
+/*
+ * Expand virtual generated columns in a Query.  We do some optimizations here
+ * to avoid digging through the whole Query unless necessary.
+ */
+static Query *
+expand_generated_columns_in_query(Query *query, struct expand_generated_context *context)
+{
+	context->rtables = lappend(context->rtables, query->rtable);
+	if (query->hasGeneratedVirtual)
+		context->ancestor_has_virtual++;
+
+	/*
+	 * If any table in the query has a virtual column or there is a sublink,
+	 * then we need to do the whole walk.
+	 */
+	if (query->hasGeneratedVirtual || query->hasSubLinks || context->ancestor_has_virtual)
+	{
+		query = query_tree_mutator(query,
+								   expand_generated_columns_mutator,
+								   context,
+								   QTW_DONT_COPY_QUERY);
+	}
+
+	/*
+	 * Else we only need to process subqueries.
+	 */
+	else
+	{
+		ListCell   *lc;
+
+		foreach(lc, query->rtable)
+		{
+			RangeTblEntry *rte = (RangeTblEntry *) lfirst(lc);
+
+			if (rte->rtekind == RTE_SUBQUERY)
+				rte->subquery = expand_generated_columns_in_query(rte->subquery, context);
+		}
+
+		foreach(lc, query->cteList)
+		{
+			CommonTableExpr *cte = (CommonTableExpr *) lfirst(lc);
+
+			cte->ctequery = (Node *) expand_generated_columns_in_query(castNode(Query, cte->ctequery), context);
+		}
+	}
+
+	if (query->hasGeneratedVirtual)
+		context->ancestor_has_virtual--;
+	context->rtables = list_truncate(context->rtables, list_length(context->rtables) - 1);
+
+	return query;
+}
+
+
+/*
  * QueryRewrite -
  *	  Primary entry point to the query rewriter.
  *	  Rewrite one query via query rewrite system, possibly returning 0
@@ -4409,8 +4575,11 @@ QueryRewrite(Query *parsetree)
 	foreach(l, querylist)
 	{
 		Query	   *query = (Query *) lfirst(l);
+		struct expand_generated_context context = {0};
 
 		query = fireRIRrules(query, NIL);
+
+		query = expand_generated_columns_in_query(query, &context);
 
 		query->queryId = input_query_id;
 

@@ -405,6 +405,7 @@ transformMergeStmt(ParseState *pstate, MergeStmt *stmt)
 
 	qry->hasTargetSRFs = false;
 	qry->hasSubLinks = pstate->p_hasSubLinks;
+	qry->hasGeneratedVirtual = pstate->p_hasGeneratedVirtual;
 
 	assign_query_collations(pstate, qry);
 
