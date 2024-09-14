@@ -2752,10 +2752,10 @@ select jsonb_path_query('"hello world"', '$.replace("hello","bye")');
  "bye world"
 (1 row)
 
-select jsonb_path_query('"hello world"', '$.replace("world","earth")');
+select jsonb_path_query('"hello world"', '$.replace("hello","bye") starts with "bye"');
  jsonb_path_query 
 ------------------
- "hello earth"
+ true
 (1 row)
 
 -- Test .time()
