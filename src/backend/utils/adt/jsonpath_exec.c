@@ -1659,6 +1659,42 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 				res = executeNextItem(cxt, jsp, NULL, jb, found, true);
 			}
 			break;
+		case jpiReplaceFunc:
+		{
+			JsonbValue	jbv;
+			char	   *tmp = NULL;
+
+			if (unwrap && JsonbType(jb) == jbvArray)
+				return executeItemUnwrapTargetArray(cxt, jsp, jb, found, false);
+
+			switch (JsonbType(jb))
+			{
+				case jbvString:
+
+					/*
+					 * Value is not necessarily null-terminated, so we do
+					 * pnstrdup() here.
+					 */
+						tmp = pnstrdup(jb->val.string.val,
+									   jb->val.string.len);
+				break;
+				default:
+					RETURN_ERROR(ereport(ERROR,
+										 (errcode(ERRCODE_NON_NUMERIC_SQL_JSON_ITEM),
+										  errmsg("jsonpath item method .%s() can only be applied to a string value",
+												 jspOperationName(jsp->type)))));
+				break;
+			}
+
+			jb = &jbv;
+			Assert(tmp != NULL);	/* We must have set tmp above */
+			jb->val.string.val = tmp;
+			jb->val.string.len = strlen(jb->val.string.val);
+			jb->type = jbvString;
+
+			res = executeNextItem(cxt, jsp, NULL, jb, found, true);
+		}
+		break;
 
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", jsp->type);

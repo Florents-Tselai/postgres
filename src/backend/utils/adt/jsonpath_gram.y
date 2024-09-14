@@ -83,7 +83,7 @@ static bool makeItemLikeRegex(JsonPathParseItem *expr,
 %token	<str>		ABS_P SIZE_P TYPE_P FLOOR_P DOUBLE_P CEILING_P KEYVALUE_P
 %token	<str>		DATETIME_P
 %token	<str>		BIGINT_P BOOLEAN_P DATE_P DECIMAL_P INTEGER_P NUMBER_P
-%token	<str>		STRINGFUNC_P TIME_P TIME_TZ_P TIMESTAMP_P TIMESTAMP_TZ_P
+%token	<str>		REPLACEFUNC_P STRINGFUNC_P TIME_P TIME_TZ_P TIMESTAMP_P TIMESTAMP_TZ_P
 
 %type	<result>	result
 
@@ -92,6 +92,7 @@ static bool makeItemLikeRegex(JsonPathParseItem *expr,
 					index_elem starts_with_initial expr_or_predicate
 					datetime_template opt_datetime_template csv_elem
 					datetime_precision opt_datetime_precision
+					replace_arg_1 replace_arg_2
 
 %type	<elems>		accessor_expr csv_list opt_csv_list
 
@@ -266,6 +267,8 @@ accessor_op:
 						 errmsg("invalid input syntax for type %s", "jsonpath"),
 						 errdetail(".decimal() can only have an optional precision[,scale].")));
 		}
+	| '.' REPLACEFUNC_P '(' replace_arg_1 ')'
+		{ $$ = makeItemUnary(jpiReplaceFunc, $4); }
 	| '.' DATETIME_P '(' opt_datetime_template ')'
 		{ $$ = makeItemUnary(jpiDatetime, $4); }
 	| '.' TIME_P '(' opt_datetime_precision ')'
@@ -313,6 +316,14 @@ datetime_template:
 opt_datetime_template:
 	datetime_template				{ $$ = $1; }
 	| /* EMPTY */					{ $$ = NULL; }
+	;
+
+replace_arg_1:
+	STRING_P						{$$ = makeItemString(&$1);}
+	;
+
+replace_arg_2:
+	STRING_P						{$$ = makeItemString(&$1);}
 	;
 
 key:

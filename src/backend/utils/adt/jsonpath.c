@@ -358,6 +358,7 @@ flattenJsonPathParseItem(StringInfo buf, int *result, struct Node *escontext,
 		case jpiMinus:
 		case jpiExists:
 		case jpiDatetime:
+		case jpiReplaceFunc:
 		case jpiTime:
 		case jpiTimeTz:
 		case jpiTimestamp:
@@ -795,6 +796,15 @@ printJsonPathItem(StringInfo buf, JsonPathItem *v, bool inKey,
 		case jpiStringFunc:
 			appendStringInfoString(buf, ".string()");
 			break;
+		case jpiReplaceFunc:
+			appendStringInfoString(buf, ".replace(");
+			if (v->content.arg)
+			{
+				jspGetArg(v, &elem);
+				printJsonPathItem(buf, &elem, false, false);
+			}
+			appendStringInfoChar(buf, ')');
+			break;
 		case jpiTime:
 			appendStringInfoString(buf, ".time(");
 			if (v->content.arg)
@@ -906,6 +916,8 @@ jspOperationName(JsonPathItemType type)
 			return "number";
 		case jpiStringFunc:
 			return "string";
+		case jpiReplaceFunc:
+			return "replace";
 		case jpiTime:
 			return "time";
 		case jpiTimeTz:
@@ -1051,6 +1063,7 @@ jspInitByBuffer(JsonPathItem *v, char *base, int32 pos)
 		case jpiMinus:
 		case jpiFilter:
 		case jpiDatetime:
+		case jpiReplaceFunc:
 		case jpiTime:
 		case jpiTimeTz:
 		case jpiTimestamp:
@@ -1149,6 +1162,7 @@ jspGetNext(JsonPathItem *v, JsonPathItem *a)
 			   v->type == jpiInteger ||
 			   v->type == jpiNumber ||
 			   v->type == jpiStringFunc ||
+			   v->type == jpiString ||
 			   v->type == jpiTime ||
 			   v->type == jpiTimeTz ||
 			   v->type == jpiTimestamp ||
@@ -1503,6 +1517,16 @@ jspIsMutableWalker(JsonPathItem *jpi, struct JsonPathMutableContext *cxt)
 			case jpiStringFunc:
 				status = jpdsNonDateTime;
 				break;
+			case jpiReplaceFunc:
+				if (jpi->content.arg)
+				{
+					char	   *replace_arg1;
+				}
+				else
+				{
+					status = jpdsNonDateTime;
+				}
+			break;
 
 			case jpiTime:
 			case jpiDate:
