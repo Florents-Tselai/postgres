@@ -91,10 +91,9 @@ static bool makeItemLikeRegex(JsonPathParseItem *expr,
 					any_path accessor_op key predicate delimited_predicate
 					index_elem starts_with_initial expr_or_predicate
 					datetime_template opt_datetime_template csv_elem
-					datetime_precision opt_datetime_precision
-					replace_arg_1 replace_arg_2
+					datetime_precision opt_datetime_precision replace_arg_elem
 
-%type	<elems>		accessor_expr csv_list opt_csv_list
+%type	<elems>		accessor_expr csv_list opt_csv_list replace_args_list
 
 %type	<indexs>	index_list
 
@@ -267,8 +266,16 @@ accessor_op:
 						 errmsg("invalid input syntax for type %s", "jsonpath"),
 						 errdetail(".decimal() can only have an optional precision[,scale].")));
 		}
-	| '.' REPLACEFUNC_P '(' replace_arg_1 ')'
-		{ $$ = makeItemUnary(jpiReplaceFunc, $4); }
+	| '.' REPLACEFUNC_P '(' replace_args_list ')'
+		{
+			if (list_length($4) == 2)
+				$$ = makeItemBinary(jpiReplaceFunc, linitial($4), lsecond($4));
+			else
+				ereturn(escontext, false,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("invalid input syntax for type %s", "jsonpath"),
+						 errdetail(".replace() accepts two arguments.")));
+        }
 	| '.' DATETIME_P '(' opt_datetime_template ')'
 		{ $$ = makeItemUnary(jpiDatetime, $4); }
 	| '.' TIME_P '(' opt_datetime_precision ')'
@@ -318,12 +325,13 @@ opt_datetime_template:
 	| /* EMPTY */					{ $$ = NULL; }
 	;
 
-replace_arg_1:
-	STRING_P						{$$ = makeItemString(&$1);}
+replace_arg_elem:
+	STRING_P						{ $$ = makeItemString(&$1); }
 	;
 
-replace_arg_2:
-	STRING_P						{$$ = makeItemString(&$1);}
+replace_args_list:
+	replace_arg_elem							{ $$ = list_make1($1); }
+	| replace_args_list ',' replace_arg_elem	{ $$ = lappend($1, $3); }
 	;
 
 key:

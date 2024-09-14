@@ -298,6 +298,7 @@ flattenJsonPathParseItem(StringInfo buf, int *result, struct Node *escontext,
 		case jpiMod:
 		case jpiStartsWith:
 		case jpiDecimal:
+		case jpiReplaceFunc:
 			{
 				/*
 				 * First, reserve place for left/right arg's positions, then
@@ -358,7 +359,6 @@ flattenJsonPathParseItem(StringInfo buf, int *result, struct Node *escontext,
 		case jpiMinus:
 		case jpiExists:
 		case jpiDatetime:
-		case jpiReplaceFunc:
 		case jpiTime:
 		case jpiTimeTz:
 		case jpiTimestamp:
@@ -798,9 +798,15 @@ printJsonPathItem(StringInfo buf, JsonPathItem *v, bool inKey,
 			break;
 		case jpiReplaceFunc:
 			appendStringInfoString(buf, ".replace(");
-			if (v->content.arg)
+			if (v->content.args.left)
 			{
-				jspGetArg(v, &elem);
+				jspGetLeftArg(v, &elem);
+				printJsonPathItem(buf, &elem, false, false);
+			}
+			if (v->content.args.right)
+			{
+				appendStringInfoChar(buf, ',');
+				jspGetRightArg(v, &elem);
 				printJsonPathItem(buf, &elem, false, false);
 			}
 			appendStringInfoChar(buf, ')');
@@ -1053,6 +1059,7 @@ jspInitByBuffer(JsonPathItem *v, char *base, int32 pos)
 		case jpiMod:
 		case jpiStartsWith:
 		case jpiDecimal:
+		case jpiReplaceFunc:
 			read_int32(v->content.args.left, base, pos);
 			read_int32(v->content.args.right, base, pos);
 			break;
@@ -1063,7 +1070,6 @@ jspInitByBuffer(JsonPathItem *v, char *base, int32 pos)
 		case jpiMinus:
 		case jpiFilter:
 		case jpiDatetime:
-		case jpiReplaceFunc:
 		case jpiTime:
 		case jpiTimeTz:
 		case jpiTimestamp:
@@ -1515,18 +1521,9 @@ jspIsMutableWalker(JsonPathItem *jpi, struct JsonPathMutableContext *cxt)
 			case jpiInteger:
 			case jpiNumber:
 			case jpiStringFunc:
+			case jpiReplaceFunc:
 				status = jpdsNonDateTime;
 				break;
-			case jpiReplaceFunc:
-				if (jpi->content.arg)
-				{
-					char	   *replace_arg1;
-				}
-				else
-				{
-					status = jpdsNonDateTime;
-				}
-			break;
 
 			case jpiTime:
 			case jpiDate:

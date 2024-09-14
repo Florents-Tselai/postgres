@@ -1660,41 +1660,149 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 			}
 			break;
 		case jpiReplaceFunc:
-		{
-			JsonbValue	jbv;
-			char	   *tmp = NULL;
-
-			if (unwrap && JsonbType(jb) == jbvArray)
-				return executeItemUnwrapTargetArray(cxt, jsp, jb, found, false);
-
-			switch (JsonbType(jb))
 			{
-				case jbvString:
-
-					/*
-					 * Value is not necessarily null-terminated, so we do
-					 * pnstrdup() here.
-					 */
-						tmp = pnstrdup(jb->val.string.val,
-									   jb->val.string.len);
-				break;
-				default:
-					RETURN_ERROR(ereport(ERROR,
-										 (errcode(ERRCODE_NON_NUMERIC_SQL_JSON_ITEM),
-										  errmsg("jsonpath item method .%s() can only be applied to a string value",
-												 jspOperationName(jsp->type)))));
-				break;
+				// JsonbValue	jbv;
+				// Numeric		num;
+				// char	   *numstr = NULL;
+				//
+				// if (unwrap && JsonbType(jb) == jbvArray)
+				// 	return executeItemUnwrapTargetArray(cxt, jsp, jb, found,
+				// 										false);
+				//
+				// if (jb->type == jbvNumeric)
+				// {
+				// 	num = jb->val.numeric;
+				// 	if (numeric_is_nan(num) || numeric_is_inf(num))
+				// 		RETURN_ERROR(ereport(ERROR,
+				// 							 (errcode(ERRCODE_NON_NUMERIC_SQL_JSON_ITEM),
+				// 							  errmsg("NaN or Infinity is not allowed for jsonpath item method .%s()",
+				// 									 jspOperationName(jsp->type)))));
+				//
+				// 	if (jsp->type == jpiDecimal)
+				// 		numstr = DatumGetCString(DirectFunctionCall1(numeric_out,
+				// 													 NumericGetDatum(num)));
+				// 	res = jperOk;
+				// }
+				// else if (jb->type == jbvString)
+				// {
+				// 	/* cast string as number */
+				// 	Datum		datum;
+				// 	bool		noerr;
+				// 	ErrorSaveContext escontext = {T_ErrorSaveContext};
+				//
+				// 	numstr = pnstrdup(jb->val.string.val, jb->val.string.len);
+				//
+				// 	noerr = DirectInputFunctionCallSafe(numeric_in, numstr,
+				// 										InvalidOid, -1,
+				// 										(Node *) &escontext,
+				// 										&datum);
+				//
+				// 	if (!noerr || escontext.error_occurred)
+				// 		RETURN_ERROR(ereport(ERROR,
+				// 							 (errcode(ERRCODE_NON_NUMERIC_SQL_JSON_ITEM),
+				// 							  errmsg("argument \"%s\" of jsonpath item method .%s() is invalid for type numeric",
+				// 									 numstr, jspOperationName(jsp->type)))));
+				//
+				// 	num = DatumGetNumeric(datum);
+				// 	if (numeric_is_nan(num) || numeric_is_inf(num))
+				// 		RETURN_ERROR(ereport(ERROR,
+				// 							 (errcode(ERRCODE_NON_NUMERIC_SQL_JSON_ITEM),
+				// 							  errmsg("NaN or Infinity is not allowed for jsonpath item method .%s()",
+				// 									 jspOperationName(jsp->type)))));
+				//
+				// 	res = jperOk;
+				// }
+				//
+				// if (res == jperNotFound)
+				// 	RETURN_ERROR(ereport(ERROR,
+				// 						 (errcode(ERRCODE_NON_NUMERIC_SQL_JSON_ITEM),
+				// 						  errmsg("jsonpath item method .%s() can only be applied to a string or numeric value",
+				// 								 jspOperationName(jsp->type)))));
+				//
+				// /*
+				//  * If we have arguments, then they must be the precision and
+				//  * optional scale used in .decimal().  Convert them to the
+				//  * typmod equivalent and then truncate the numeric value per
+				//  * this typmod details.
+				//  */
+				// if (jsp->type == jpiDecimal && jsp->content.args.left)
+				// {
+				// 	Datum		numdatum;
+				// 	Datum		dtypmod;
+				// 	int32		precision;
+				// 	int32		scale = 0;
+				// 	bool		have_error;
+				// 	bool		noerr;
+				// 	ArrayType  *arrtypmod;
+				// 	Datum		datums[2];
+				// 	char		pstr[12];	/* sign, 10 digits and '\0' */
+				// 	char		sstr[12];	/* sign, 10 digits and '\0' */
+				// 	ErrorSaveContext escontext = {T_ErrorSaveContext};
+				//
+				// 	jspGetLeftArg(jsp, &elem);
+				// 	if (elem.type != jpiNumeric)
+				// 		elog(ERROR, "invalid jsonpath item type for .decimal() precision");
+				//
+				// 	precision = numeric_int4_opt_error(jspGetNumeric(&elem),
+				// 									   &have_error);
+				// 	if (have_error)
+				// 		RETURN_ERROR(ereport(ERROR,
+				// 							 (errcode(ERRCODE_NON_NUMERIC_SQL_JSON_ITEM),
+				// 							  errmsg("precision of jsonpath item method .%s() is out of range for type integer",
+				// 									 jspOperationName(jsp->type)))));
+				//
+				// 	if (jsp->content.args.right)
+				// 	{
+				// 		jspGetRightArg(jsp, &elem);
+				// 		if (elem.type != jpiNumeric)
+				// 			elog(ERROR, "invalid jsonpath item type for .decimal() scale");
+				//
+				// 		scale = numeric_int4_opt_error(jspGetNumeric(&elem),
+				// 									   &have_error);
+				// 		if (have_error)
+				// 			RETURN_ERROR(ereport(ERROR,
+				// 								 (errcode(ERRCODE_NON_NUMERIC_SQL_JSON_ITEM),
+				// 								  errmsg("scale of jsonpath item method .%s() is out of range for type integer",
+				// 										 jspOperationName(jsp->type)))));
+				// 	}
+				//
+				// 	/*
+				// 	 * numerictypmodin() takes the precision and scale in the
+				// 	 * form of CString arrays.
+				// 	 */
+				// 	pg_ltoa(precision, pstr);
+				// 	datums[0] = CStringGetDatum(pstr);
+				// 	pg_ltoa(scale, sstr);
+				// 	datums[1] = CStringGetDatum(sstr);
+				// 	arrtypmod = construct_array_builtin(datums, 2, CSTRINGOID);
+				//
+				// 	dtypmod = DirectFunctionCall1(numerictypmodin,
+				// 								  PointerGetDatum(arrtypmod));
+				//
+				// 	/* Convert numstr to Numeric with typmod */
+				// 	Assert(numstr != NULL);
+				// 	noerr = DirectInputFunctionCallSafe(numeric_in, numstr,
+				// 										InvalidOid, dtypmod,
+				// 										(Node *) &escontext,
+				// 										&numdatum);
+				//
+				// 	if (!noerr || escontext.error_occurred)
+				// 		RETURN_ERROR(ereport(ERROR,
+				// 							 (errcode(ERRCODE_NON_NUMERIC_SQL_JSON_ITEM),
+				// 							  errmsg("argument \"%s\" of jsonpath item method .%s() is invalid for type numeric",
+				// 									 numstr, jspOperationName(jsp->type)))));
+				//
+				// 	num = DatumGetNumeric(numdatum);
+				// 	pfree(arrtypmod);
+				// }
+				//
+				// jb = &jbv;
+				// jb->type = jbvNumeric;
+				// jb->val.numeric = num;
+				//
+				// res = executeNextItem(cxt, jsp, NULL, jb, found, true);
 			}
-
-			jb = &jbv;
-			Assert(tmp != NULL);	/* We must have set tmp above */
-			jb->val.string.val = tmp;
-			jb->val.string.len = strlen(jb->val.string.val);
-			jb->type = jbvString;
-
-			res = executeNextItem(cxt, jsp, NULL, jb, found, true);
-		}
-		break;
+			break;
 
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", jsp->type);
