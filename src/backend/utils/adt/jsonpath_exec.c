@@ -1659,6 +1659,79 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 				res = executeNextItem(cxt, jsp, NULL, jb, found, true);
 			}
 			break;
+		case jpiReplaceFunc:
+			{
+				JsonbValue	jbv;
+				Datum		replace_res;
+				char		*tmp = NULL;
+
+				/*
+				 * Value is not necessarily null-terminated, so we do
+				 * pnstrdup() here.
+				 */
+				tmp = pnstrdup(jb->val.string.val,
+							   jb->val.string.len);
+
+				if (unwrap && JsonbType(jb) == jbvArray)
+					return executeItemUnwrapTargetArray(cxt, jsp, jb, found,
+														false);
+
+				/* TODO: probably need ERRCODE for that? */
+				if (!(jb = getScalar(jb, jbvString)))
+				RETURN_ERROR(ereport(ERROR,
+									 (errcode(ERRCODE_INVALID_ARGUMENT_FOR_SQL_JSON_DATETIME_FUNCTION),
+									  errmsg("jsonpath item method .%s() can only be applied to a string",
+											 jspOperationName(jsp->type)))));
+
+				if (jsp->content.args.left)
+				{
+					text		*from, *to;
+					char		*from_str, *to_str;
+					int			from_len, to_len;
+					ErrorSaveContext escontext = {T_ErrorSaveContext};
+
+					jspGetLeftArg(jsp, &elem);
+					if (elem.type != jpiString)
+						elog(ERROR, "invalid jsonpath item type for .replace() from");
+
+					from_str = jspGetString(&elem, &from_len);
+					from = cstring_to_text_with_len(from_str, from_len);
+
+					if (jsp->content.args.right)
+					{
+						jspGetRightArg(jsp, &elem);
+						if (elem.type != jpiString)
+							elog(ERROR, "invalid jsonpath item type for .replace() to");
+
+						to_str = jspGetString(&elem, &to_len);
+						to = cstring_to_text_with_len(to_str, to_len);
+
+						replace_res = DirectFunctionCall3Coll(replace_text,
+							C_COLLATION_OID,
+							CStringGetTextDatum(tmp),
+							PointerGetDatum(from),
+							PointerGetDatum(to));
+
+					}
+
+					res = jperOk;
+				}
+
+				if (res == jperNotFound)
+					RETURN_ERROR(ereport(ERROR,
+										 (errcode(ERRCODE_NON_NUMERIC_SQL_JSON_ITEM),
+										  errmsg("jsonpath item method .%s() accepts two string arguments",
+												 jspOperationName(jsp->type)))));
+
+				jb = &jbv;
+				jb->type = jbvString;
+				jb->val.string.val = VARDATA_ANY(replace_res);
+				jb->val.string.len = VARSIZE_ANY_EXHDR(replace_res);
+
+				res = executeNextItem(cxt, jsp, NULL, jb, found, true);
+			}
+			break;
+
 
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", jsp->type);
