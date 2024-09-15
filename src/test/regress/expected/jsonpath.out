@@ -435,6 +435,12 @@ select '$.string()'::jsonpath;
  $.string()
 (1 row)
 
+select '$.replace("hello","bye")'::jsonpath;
+         jsonpath         
+--------------------------
+ $.replace("hello","bye")
+(1 row)
+
 select '$.time()'::jsonpath;
  jsonpath 
 ----------

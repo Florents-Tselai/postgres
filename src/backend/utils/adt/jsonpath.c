@@ -298,6 +298,7 @@ flattenJsonPathParseItem(StringInfo buf, int *result, struct Node *escontext,
 		case jpiMod:
 		case jpiStartsWith:
 		case jpiDecimal:
+		case jpiReplaceFunc:
 			{
 				/*
 				 * First, reserve place for left/right arg's positions, then
@@ -831,6 +832,21 @@ printJsonPathItem(StringInfo buf, JsonPathItem *v, bool inKey,
 			}
 			appendStringInfoChar(buf, ')');
 			break;
+		case jpiReplaceFunc:
+			appendStringInfoString(buf, ".replace(");
+			if (v->content.args.left)
+			{
+				jspGetLeftArg(v, &elem);
+				printJsonPathItem(buf, &elem, false, false);
+			}
+			if (v->content.args.right)
+			{
+				appendStringInfoChar(buf, ',');
+				jspGetRightArg(v, &elem);
+				printJsonPathItem(buf, &elem, false, false);
+			}
+			appendStringInfoChar(buf, ')');
+			break;
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", v->type);
 	}
@@ -906,6 +922,8 @@ jspOperationName(JsonPathItemType type)
 			return "number";
 		case jpiStringFunc:
 			return "string";
+		case jpiReplaceFunc:
+			return "replace";
 		case jpiTime:
 			return "time";
 		case jpiTimeTz:
@@ -1041,6 +1059,7 @@ jspInitByBuffer(JsonPathItem *v, char *base, int32 pos)
 		case jpiMod:
 		case jpiStartsWith:
 		case jpiDecimal:
+		case jpiReplaceFunc:
 			read_int32(v->content.args.left, base, pos);
 			read_int32(v->content.args.right, base, pos);
 			break;
@@ -1149,6 +1168,7 @@ jspGetNext(JsonPathItem *v, JsonPathItem *a)
 			   v->type == jpiInteger ||
 			   v->type == jpiNumber ||
 			   v->type == jpiStringFunc ||
+			   v->type == jpiReplaceFunc ||
 			   v->type == jpiTime ||
 			   v->type == jpiTimeTz ||
 			   v->type == jpiTimestamp ||
@@ -1501,6 +1521,7 @@ jspIsMutableWalker(JsonPathItem *jpi, struct JsonPathMutableContext *cxt)
 			case jpiInteger:
 			case jpiNumber:
 			case jpiStringFunc:
+			case jpiReplaceFunc:
 				status = jpdsNonDateTime;
 				break;
 
