@@ -2079,7 +2079,7 @@ executeAnyItem(JsonPathExecContext *cxt, JsonPathItem *jsp, JsonbContainer *jbc,
  * Execute unary or binary predicate.
  *
  * Predicates have existence semantics, because their operands are item
- * sequences.  Pairs of items from the left and right operke and's sequences are
+ * sequences.  Pairs of items from the left and right operand's sequences are
  * checked.  TRUE returned only if any pair satisfying the condition is found.
  * In strict mode, even if the desired pair has already been found, all pairs
  * still need to be examined to check the absence of errors.  If any error
