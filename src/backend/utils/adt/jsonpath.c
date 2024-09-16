@@ -1199,7 +1199,8 @@ jspGetLeftArg(JsonPathItem *v, JsonPathItem *a)
 		   v->type == jpiDiv ||
 		   v->type == jpiMod ||
 		   v->type == jpiStartsWith ||
-		   v->type == jpiDecimal);
+		   v->type == jpiDecimal ||
+		   v->type == jpiReplaceFunc);
 
 	jspInitByBuffer(a, v->base, v->content.args.left);
 }
@@ -1221,7 +1222,8 @@ jspGetRightArg(JsonPathItem *v, JsonPathItem *a)
 		   v->type == jpiDiv ||
 		   v->type == jpiMod ||
 		   v->type == jpiStartsWith ||
-		   v->type == jpiDecimal);
+		   v->type == jpiDecimal ||
+		   v->type == jpiReplaceFunc);
 
 	jspInitByBuffer(a, v->base, v->content.args.right);
 }
