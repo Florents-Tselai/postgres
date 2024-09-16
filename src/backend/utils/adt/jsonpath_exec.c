@@ -1694,14 +1694,12 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 
 					from_str = jspGetString(&elem, &from_len);
 
-					if (jsp->content.args.right)
-					{
-						jspGetRightArg(jsp, &elem);
-						if (elem.type != jpiString)
-							elog(ERROR, "invalid jsonpath item type for .replace() to");
+					jspGetRightArg(jsp, &elem);
+					if (elem.type != jpiString)
+						elog(ERROR, "invalid jsonpath item type for .replace() to");
 
-						to_str = jspGetString(&elem, &to_len);
-					}
+					to_str = jspGetString(&elem, &to_len);
+
 					replacedTxt = TextDatumGetCString(DirectFunctionCall3Coll(replace_text,
 						C_COLLATION_OID,
 						CStringGetTextDatum(txt),
