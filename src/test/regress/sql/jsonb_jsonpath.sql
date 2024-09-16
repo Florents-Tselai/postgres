@@ -628,7 +628,7 @@ rollback;
 -- select jsonb_path_query('{}', '$.replace("x", "bye")', silent => true);
 select jsonb_path_query('1.23', '$.replace("x", "bye")');
 select jsonb_path_query('"hello world"', '$.replace("hello","bye")');
--- select jsonb_path_query('"hello world"', '$.replace("hello","bye") starts with "bye"');
+select jsonb_path_query('"hello world"', '$.replace("hello","bye") starts with "bye"');
 
 -- Test .time()
 select jsonb_path_query('null', '$.time()');

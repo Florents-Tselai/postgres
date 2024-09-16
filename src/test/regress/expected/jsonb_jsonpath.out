@@ -2734,7 +2734,12 @@ select jsonb_path_query('"hello world"', '$.replace("hello","bye")');
  "bye world"
 (1 row)
 
--- select jsonb_path_query('"hello world"', '$.replace("hello","bye") starts with "bye"');
+select jsonb_path_query('"hello world"', '$.replace("hello","bye") starts with "bye"');
+ jsonb_path_query 
+------------------
+ true
+(1 row)
+
 -- Test .time()
 select jsonb_path_query('null', '$.time()');
 ERROR:  jsonpath item method .time() can only be applied to a string
