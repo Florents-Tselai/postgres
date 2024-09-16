@@ -1679,26 +1679,24 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 					res = jperOk;
 				}
 
-				if (res == jperNotFound)
+				if (res == jperNotFound) {
 					/* TODO: probably need ERRCODE for that? */
 					RETURN_ERROR(ereport(ERROR,
 										 (errcode(ERRCODE_INVALID_ARGUMENT_FOR_SQL_JSON_DATETIME_FUNCTION),
 										  errmsg("jsonpath item method .%s() can only be applied to a string",
 												 jspOperationName(jsp->type)))));
-
+					break;
+				}
 				if (jsp->type == jpiString && jsp->content.args.left)
 				{
-					text		*from, *to;
 					char		*from_str, *to_str;
 					int			from_len, to_len;
-					ErrorSaveContext escontext = {T_ErrorSaveContext};
 
 					jspGetLeftArg(jsp, &elem);
 					if (elem.type != jpiString)
 						elog(ERROR, "invalid jsonpath item type for .replace() from");
 
 					from_str = jspGetString(&elem, &from_len);
-					from = cstring_to_text_with_len(from_str, from_len);
 
 					if (jsp->content.args.right)
 					{
@@ -1707,7 +1705,6 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 							elog(ERROR, "invalid jsonpath item type for .replace() to");
 
 						to_str = jspGetString(&elem, &to_len);
-						to = cstring_to_text_with_len(to_str, to_len);
 					}
 					replacedTxt = TextDatumGetCString(DirectFunctionCall3Coll(replace_text,
 						C_COLLATION_OID,
@@ -2080,7 +2077,7 @@ executeAnyItem(JsonPathExecContext *cxt, JsonPathItem *jsp, JsonbContainer *jbc,
  * Execute unary or binary predicate.
  *
  * Predicates have existence semantics, because their operands are item
- * sequences.  Pairs of items from the left and right operand's sequences are
+ * sequences.  Pairs of items from the left and right operke and's sequences are
  * checked.  TRUE returned only if any pair satisfying the condition is found.
  * In strict mode, even if the desired pair has already been found, all pairs
  * still need to be examined to check the absence of errors.  If any error
