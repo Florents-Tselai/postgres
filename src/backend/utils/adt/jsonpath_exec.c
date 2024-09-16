@@ -1659,22 +1659,19 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 				res = executeNextItem(cxt, jsp, NULL, jb, found, true);
 			}
 			break;
+
 		case jpiReplaceFunc:
 			{
 				JsonbValue	jbv;
 				char		*replacedTxt;
 				char		*txt = NULL;
-				int			txt_len;
 
 				if (unwrap && JsonbType(jb) == jbvArray)
-					return executeItemUnwrapTargetArray(cxt, jsp, jb, found,
-														false);
+					return executeItemUnwrapTargetArray(cxt, jsp, jb, found,false);
 
 				if (jb->type == jbvString) {
 					/* Value is not necessarily null-terminated, so we do pnstrdup() here. */
-					txt = pnstrdup(jb->val.string.val,
-								   jb->val.string.len);
-					txt_len = jb->val.string.len;
+					txt = pnstrdup(jb->val.string.val, jb->val.string.len);
 
 					res = jperOk;
 				}
@@ -1685,9 +1682,8 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 										 (errcode(ERRCODE_INVALID_ARGUMENT_FOR_SQL_JSON_DATETIME_FUNCTION),
 										  errmsg("jsonpath item method .%s() can only be applied to a string",
 												 jspOperationName(jsp->type)))));
-					break;
 				}
-				if (jsp->type == jpiString && jsp->content.args.left)
+				if (jsp->content.args.left && jsp->content.args.right)
 				{
 					char		*from_str, *to_str;
 					int			from_len, to_len;
@@ -1710,12 +1706,20 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 						C_COLLATION_OID,
 						CStringGetTextDatum(txt),
 						CStringGetTextDatum(from_str),
-						CStringGetTextDatum(to_str)));}
+						CStringGetTextDatum(to_str)));
 
-				jb = &jbv;
-				jb->type = jbvString;
-				jb->val.string.val = replacedTxt;
-				jb->val.string.len = strlen(replacedTxt);
+					jb = &jbv;
+					jb->type = jbvString;
+					jb->val.string.val = replacedTxt;
+					jb->val.string.len = strlen(replacedTxt);
+				}
+				else {
+					RETURN_ERROR(ereport(ERROR,
+											 (errcode(ERRCODE_INVALID_ARGUMENT_FOR_SQL_JSON_DATETIME_FUNCTION),
+											  errmsg("jsonpath item method .%s() can only be applied to a boolean, string, numeric, or datetime value",
+													 jspOperationName(jsp->type)))));
+					break;
+				}
 
 				res = executeNextItem(cxt, jsp, NULL, jb, found, true);
 			}
