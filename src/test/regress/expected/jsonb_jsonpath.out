@@ -2727,10 +2727,13 @@ select jsonb_path_query('null', '$.replace("x", "bye")', silent => true);
 ------------------
 (0 rows)
 
-select jsonb_path_query('[]', '$.replace("x", "bye")');
+select jsonb_path_query('["x", "y", "z"]', '$.replace("x", "bye")');
  jsonb_path_query 
 ------------------
-(0 rows)
+ "bye"
+ "y"
+ "z"
+(3 rows)
 
 select jsonb_path_query('{}', '$.replace("x", "bye")');
 ERROR:  jsonpath item method .replace() can only be applied to a string

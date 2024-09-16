@@ -622,7 +622,7 @@ rollback;
 -- Test .replace()
 select jsonb_path_query('null', '$.replace("x", "bye")');
 select jsonb_path_query('null', '$.replace("x", "bye")', silent => true);
-select jsonb_path_query('[]', '$.replace("x", "bye")');
+select jsonb_path_query('["x", "y", "z"]', '$.replace("x", "bye")');
 select jsonb_path_query('{}', '$.replace("x", "bye")');
 select jsonb_path_query('[]', 'strict $.replace("x", "bye")', silent => true);
 select jsonb_path_query('{}', '$.replace("x", "bye")', silent => true);
