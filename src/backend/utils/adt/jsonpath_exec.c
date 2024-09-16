@@ -1662,26 +1662,28 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 		case jpiReplaceFunc:
 			{
 				JsonbValue	jbv;
-				Datum		replace_res;
-				char		*tmp = NULL;
-
-				/*
-				 * Value is not necessarily null-terminated, so we do
-				 * pnstrdup() here.
-				 */
-				tmp = pnstrdup(jb->val.string.val,
-							   jb->val.string.len);
+				Datum		replacedTxt;
+				char		*txt = NULL;
+				int			txt_len;
 
 				if (unwrap && JsonbType(jb) == jbvArray)
 					return executeItemUnwrapTargetArray(cxt, jsp, jb, found,
 														false);
 
-				/* TODO: probably need ERRCODE for that? */
-				if (!(jb = getScalar(jb, jbvString)))
-				RETURN_ERROR(ereport(ERROR,
-									 (errcode(ERRCODE_INVALID_ARGUMENT_FOR_SQL_JSON_DATETIME_FUNCTION),
-									  errmsg("jsonpath item method .%s() can only be applied to a string",
-											 jspOperationName(jsp->type)))));
+				if (jb->type == jbvString) {
+					/* Value is not necessarily null-terminated, so we do pnstrdup() here. */
+					txt = pnstrdup(jb->val.string.val,
+								   jb->val.string.len);
+					txt_len = jb->val.string.len;
+					res = jperOk;
+				}
+
+				if (res == jperNotFound)
+					/* TODO: probably need ERRCODE for that? */
+					RETURN_ERROR(ereport(ERROR,
+										 (errcode(ERRCODE_INVALID_ARGUMENT_FOR_SQL_JSON_DATETIME_FUNCTION),
+										  errmsg("jsonpath item method .%s() can only be applied to a string",
+												 jspOperationName(jsp->type)))));
 
 				if (jsp->content.args.left)
 				{
@@ -1705,28 +1707,19 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 
 						to_str = jspGetString(&elem, &to_len);
 						to = cstring_to_text_with_len(to_str, to_len);
-
-						replace_res = DirectFunctionCall3Coll(replace_text,
-							C_COLLATION_OID,
-							CStringGetTextDatum(tmp),
-							PointerGetDatum(from),
-							PointerGetDatum(to));
-
 					}
+					replacedTxt = DirectFunctionCall3Coll(replace_text,
+						C_COLLATION_OID,
+						CStringGetTextDatum(txt),
+						PointerGetDatum(from),
+						PointerGetDatum(to));
 
-					res = jperOk;
 				}
-
-				if (res == jperNotFound)
-					RETURN_ERROR(ereport(ERROR,
-										 (errcode(ERRCODE_NON_NUMERIC_SQL_JSON_ITEM),
-										  errmsg("jsonpath item method .%s() accepts two string arguments",
-												 jspOperationName(jsp->type)))));
 
 				jb = &jbv;
 				jb->type = jbvString;
-				jb->val.string.val = VARDATA_ANY(replace_res);
-				jb->val.string.len = VARSIZE_ANY_EXHDR(replace_res);
+				jb->val.string.val = VARDATA_ANY(replacedTxt);
+				jb->val.string.len = VARSIZE_ANY_EXHDR(replacedTxt);
 
 				res = executeNextItem(cxt, jsp, NULL, jb, found, true);
 			}
