@@ -1662,7 +1662,7 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 		case jpiReplaceFunc:
 			{
 				JsonbValue	jbv;
-				Datum		replacedTxt;
+				char		*replacedTxt;
 				char		*txt = NULL;
 				int			txt_len;
 
@@ -1675,6 +1675,7 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 					txt = pnstrdup(jb->val.string.val,
 								   jb->val.string.len);
 					txt_len = jb->val.string.len;
+
 					res = jperOk;
 				}
 
@@ -1685,7 +1686,7 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 										  errmsg("jsonpath item method .%s() can only be applied to a string",
 												 jspOperationName(jsp->type)))));
 
-				if (jsp->content.args.left)
+				if (jsp->type == jpiString && jsp->content.args.left)
 				{
 					text		*from, *to;
 					char		*from_str, *to_str;
@@ -1708,18 +1709,16 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 						to_str = jspGetString(&elem, &to_len);
 						to = cstring_to_text_with_len(to_str, to_len);
 					}
-					replacedTxt = DirectFunctionCall3Coll(replace_text,
+					replacedTxt = TextDatumGetCString(DirectFunctionCall3Coll(replace_text,
 						C_COLLATION_OID,
 						CStringGetTextDatum(txt),
-						PointerGetDatum(from),
-						PointerGetDatum(to));
-
-				}
+						CStringGetTextDatum(from_str),
+						CStringGetTextDatum(to_str)));}
 
 				jb = &jbv;
 				jb->type = jbvString;
-				jb->val.string.val = VARDATA_ANY(replacedTxt);
-				jb->val.string.len = VARSIZE_ANY_EXHDR(replacedTxt);
+				jb->val.string.val = replacedTxt;
+				jb->val.string.len = strlen(replacedTxt);
 
 				res = executeNextItem(cxt, jsp, NULL, jb, found, true);
 			}
