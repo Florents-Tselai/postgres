@@ -4520,12 +4520,13 @@ json_strip_nulls(PG_FUNCTION_ARGS)
 }
 
 /*
- * SQL function jsonb_strip_nulls(jsonb) -> jsonb
+ * SQL function jsonb_strip_nulls(jsonb, bool) -> jsonb
  */
 Datum
 jsonb_strip_nulls(PG_FUNCTION_ARGS)
 {
 	Jsonb	   *jb = PG_GETARG_JSONB_P(0);
+	bool		strip_in_arrays = false;
 	JsonbIterator *it;
 	JsonbParseState *parseState = NULL;
 	JsonbValue *res = NULL;
@@ -4533,6 +4534,9 @@ jsonb_strip_nulls(PG_FUNCTION_ARGS)
 				k;
 	JsonbIteratorToken type;
 	bool		last_was_key = false;
+
+	if (PG_NARGS() == 2)
+		strip_in_arrays = PG_GETARG_BOOL(1);
 
 	if (JB_ROOT_IS_SCALAR(jb))
 		PG_RETURN_POINTER(jb);

@@ -1095,6 +1095,8 @@ select jsonb_strip_nulls('null');
 
 select jsonb_strip_nulls('[1,2,null,3,4]');
 
+select jsonb_strip_nulls('[1,2,null,3,4]', true);
+
 select jsonb_strip_nulls('{"a":1,"b":null,"c":[2,null,3],"d":{"e":4,"f":null}}');
 
 select jsonb_strip_nulls('[1,{"a":1,"b":null,"c":2},3]');
