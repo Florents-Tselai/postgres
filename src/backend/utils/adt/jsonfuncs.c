@@ -4568,6 +4568,11 @@ jsonb_strip_nulls(PG_FUNCTION_ARGS)
 			(void) pushJsonbValue(&parseState, WJB_KEY, &k);
 		}
 
+		/* if strip_in_arrays is set, also skip null array elements */
+		if (strip_in_arrays)
+			if (type == WJB_ELEM && v.type == jbvNull)
+				continue;
+
 		if (type == WJB_VALUE || type == WJB_ELEM)
 			res = pushJsonbValue(&parseState, type, &v);
 		else
