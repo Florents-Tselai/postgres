@@ -83,7 +83,8 @@ static bool makeItemLikeRegex(JsonPathParseItem *expr,
 %token	<str>		ABS_P SIZE_P TYPE_P FLOOR_P DOUBLE_P CEILING_P KEYVALUE_P
 %token	<str>		DATETIME_P
 %token	<str>		BIGINT_P BOOLEAN_P DATE_P DECIMAL_P INTEGER_P NUMBER_P
-%token	<str>		STRINGFUNC_P TIME_P TIME_TZ_P TIMESTAMP_P TIMESTAMP_TZ_P REPLACEFUNC_P
+%token	<str>		STRINGFUNC_P TIME_P TIME_TZ_P TIMESTAMP_P TIMESTAMP_TZ_P
+%token	<str>		STR_REPLACEFUNC_P
 
 %type	<result>	result
 
@@ -91,9 +92,10 @@ static bool makeItemLikeRegex(JsonPathParseItem *expr,
 					any_path accessor_op key predicate delimited_predicate
 					index_elem starts_with_initial expr_or_predicate
 					datetime_template opt_datetime_template csv_elem
-					datetime_precision opt_datetime_precision replace_arg_elem
+					datetime_precision opt_datetime_precision 
+					str_method_arg_elem
 
-%type	<elems>		accessor_expr csv_list opt_csv_list replace_arg_list
+%type	<elems>		accessor_expr csv_list opt_csv_list str_method_arg_list
 
 %type	<indexs>	index_list
 
@@ -266,16 +268,6 @@ accessor_op:
 						 errmsg("invalid input syntax for type %s", "jsonpath"),
 						 errdetail(".decimal() can only have an optional precision[,scale].")));
 		}
-	| '.' REPLACEFUNC_P '(' replace_arg_list ')'
-		{
-			if (list_length($4) == 2)
-				$$ = makeItemBinary(jpiReplaceFunc, linitial($4), lsecond($4));
-			else
-				ereturn(escontext, false,
-						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("invalid input syntax for type %s", "jsonpath"),
-						 errdetail(".replace() accepts two arguments.")));
-		}
 	| '.' DATETIME_P '(' opt_datetime_template ')'
 		{ $$ = makeItemUnary(jpiDatetime, $4); }
 	| '.' TIME_P '(' opt_datetime_precision ')'
@@ -286,6 +278,16 @@ accessor_op:
 		{ $$ = makeItemUnary(jpiTimestamp, $4); }
 	| '.' TIMESTAMP_TZ_P '(' opt_datetime_precision ')'
 		{ $$ = makeItemUnary(jpiTimestampTz, $4); }
+	| '.' STR_REPLACEFUNC_P '(' str_method_arg_list ')'
+		{
+			if (list_length($4) == 2)
+				$$ = makeItemBinary(jpiReplaceFunc, linitial($4), lsecond($4));
+			else
+				ereturn(escontext, false,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("invalid input syntax for type %s", "jsonpath"),
+						 errdetail(".replace() accepts two arguments.")));
+		}
 	;
 
 csv_elem:
@@ -325,13 +327,13 @@ opt_datetime_template:
 	| /* EMPTY */					{ $$ = NULL; }
 	;
 
-replace_arg_elem:
+str_method_arg_elem:
 	STRING_P						{ $$ = makeItemString(&$1); }
 	;
 
-replace_arg_list:
-	replace_arg_elem							{ $$ = list_make1($1); }
-	| replace_arg_list ',' replace_arg_elem	{ $$ = lappend($1, $3); }
+str_method_arg_list:
+	str_method_arg_elem							{ $$ = list_make1($1); }
+	| str_method_arg_list ',' str_method_arg_elem	{ $$ = lappend($1, $3); }
 	;
 key:
 	key_name						{ $$ = makeItemKey(&$1); }
