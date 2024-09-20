@@ -329,27 +329,6 @@ flattenJsonPathParseItem(StringInfo buf, int *result, struct Node *escontext,
 		case jpiReplaceFunc:
 		{
 			{
-				int32		left = reserveSpaceForItemPointer(buf);
-				int32		right = reserveSpaceForItemPointer(buf);
-
-				if (!item->value.args.left)
-					chld = pos;
-				else if (!flattenJsonPathParseItem(buf, &chld, escontext,
-												   item->value.args.left,
-												   nestingLevel + argNestingLevel,
-												   insideArraySubscript))
-					return false;
-				*(int32 *) (buf->data + left) = chld - pos;
-
-				if (!item->value.args.right)
-					chld = pos;
-				else if (!flattenJsonPathParseItem(buf, &chld, escontext,
-												   item->value.args.right,
-												   nestingLevel + argNestingLevel,
-												   insideArraySubscript))
-					return false;
-				*(int32 *) (buf->data + right) = chld - pos;
-			}{
 				/*
 				 * First, reserve place for left/right arg's positions, then
 				 * record both args and sets actual position in reserved
