@@ -298,7 +298,6 @@ flattenJsonPathParseItem(StringInfo buf, int *result, struct Node *escontext,
 		case jpiMod:
 		case jpiStartsWith:
 		case jpiDecimal:
-		case jpiReplaceFunc:
 			{
 				/*
 				 * First, reserve place for left/right arg's positions, then
@@ -327,6 +326,58 @@ flattenJsonPathParseItem(StringInfo buf, int *result, struct Node *escontext,
 				*(int32 *) (buf->data + right) = chld - pos;
 			}
 			break;
+		case jpiReplaceFunc:
+		{
+			{
+				int32		left = reserveSpaceForItemPointer(buf);
+				int32		right = reserveSpaceForItemPointer(buf);
+
+				if (!item->value.args.left)
+					chld = pos;
+				else if (!flattenJsonPathParseItem(buf, &chld, escontext,
+												   item->value.args.left,
+												   nestingLevel + argNestingLevel,
+												   insideArraySubscript))
+					return false;
+				*(int32 *) (buf->data + left) = chld - pos;
+
+				if (!item->value.args.right)
+					chld = pos;
+				else if (!flattenJsonPathParseItem(buf, &chld, escontext,
+												   item->value.args.right,
+												   nestingLevel + argNestingLevel,
+												   insideArraySubscript))
+					return false;
+				*(int32 *) (buf->data + right) = chld - pos;
+			}{
+				/*
+				 * First, reserve place for left/right arg's positions, then
+				 * record both args and sets actual position in reserved
+				 * places.
+				 */
+				int32		arg0 = reserveSpaceForItemPointer(buf);
+				int32		arg1 = reserveSpaceForItemPointer(buf);
+
+				if (!item->value.args.left)
+					chld = pos;
+				else if (!flattenJsonPathParseItem(buf, &chld, escontext,
+												   item->value.method_args.arg0,
+												   nestingLevel + argNestingLevel,
+												   insideArraySubscript))
+					return false;
+				*(int32 *) (buf->data + arg0) = chld - pos;
+
+				if (!item->value.method_args.arg1)
+					chld = pos;
+				else if (!flattenJsonPathParseItem(buf, &chld, escontext,
+												   item->value.method_args.arg1,
+												   nestingLevel + argNestingLevel,
+												   insideArraySubscript))
+					return false;
+				*(int32 *) (buf->data + arg1) = chld - pos;
+			}
+		}
+		break;
 		case jpiLikeRegex:
 			{
 				int32		offs;
@@ -834,15 +885,15 @@ printJsonPathItem(StringInfo buf, JsonPathItem *v, bool inKey,
 			break;
 		case jpiReplaceFunc:
 			appendStringInfoString(buf, ".replace(");
-			if (v->content.args.left)
+			if (v->content.method_args.arg0)
 			{
-				jspGetLeftArg(v, &elem);
+				jspGetArg0(v, &elem);
 				printJsonPathItem(buf, &elem, false, false);
 			}
-			if (v->content.args.right)
+			if (v->content.method_args.arg1)
 			{
 				appendStringInfoChar(buf, ',');
-				jspGetRightArg(v, &elem);
+				jspGetArg1(v, &elem);
 				printJsonPathItem(buf, &elem, false, false);
 			}
 			appendStringInfoChar(buf, ')');
@@ -1059,10 +1110,13 @@ jspInitByBuffer(JsonPathItem *v, char *base, int32 pos)
 		case jpiMod:
 		case jpiStartsWith:
 		case jpiDecimal:
-		case jpiReplaceFunc:
 			read_int32(v->content.args.left, base, pos);
 			read_int32(v->content.args.right, base, pos);
 			break;
+		case jpiReplaceFunc:
+			read_int32(v->content.method_args.arg0, base, pos);
+			read_int32(v->content.method_args.arg1, base, pos);
+		break;
 		case jpiNot:
 		case jpiIsUnknown:
 		case jpiExists:
@@ -1199,10 +1253,25 @@ jspGetLeftArg(JsonPathItem *v, JsonPathItem *a)
 		   v->type == jpiDiv ||
 		   v->type == jpiMod ||
 		   v->type == jpiStartsWith ||
-		   v->type == jpiDecimal ||
-		   v->type == jpiReplaceFunc);
+		   v->type == jpiDecimal);
 
 	jspInitByBuffer(a, v->base, v->content.args.left);
+}
+
+void
+jspGetArg0(JsonPathItem *v, JsonPathItem *a)
+{
+	Assert(v->type == jpiReplaceFunc);
+
+	jspInitByBuffer(a, v->base, v->content.method_args.arg0);
+}
+
+void
+jspGetArg1(JsonPathItem *v, JsonPathItem *a)
+{
+	Assert(v->type == jpiReplaceFunc);
+
+	jspInitByBuffer(a, v->base, v->content.method_args.arg1);
 }
 
 void
@@ -1222,11 +1291,11 @@ jspGetRightArg(JsonPathItem *v, JsonPathItem *a)
 		   v->type == jpiDiv ||
 		   v->type == jpiMod ||
 		   v->type == jpiStartsWith ||
-		   v->type == jpiDecimal ||
-		   v->type == jpiReplaceFunc);
+		   v->type == jpiDecimal);
 
 	jspInitByBuffer(a, v->base, v->content.args.right);
 }
+
 
 bool
 jspGetBool(JsonPathItem *v)

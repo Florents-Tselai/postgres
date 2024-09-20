@@ -1683,18 +1683,18 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 										  errmsg("jsonpath item method .%s() can only be applied to a string",
 												 jspOperationName(jsp->type)))));
 				}
-				if (jsp->content.args.left && jsp->content.args.right)
+				if (jsp->content.method_args.arg0 && jsp->content.method_args.arg1)
 				{
 					char		*from_str, *to_str;
 					int			from_len, to_len;
 
-					jspGetLeftArg(jsp, &elem);
+					jspGetArg0(jsp, &elem);
 					if (elem.type != jpiString)
 						elog(ERROR, "invalid jsonpath item type for .replace() from");
 
 					from_str = jspGetString(&elem, &from_len);
 
-					jspGetRightArg(jsp, &elem);
+					jspGetArg1(jsp, &elem);
 					if (elem.type != jpiString)
 						elog(ERROR, "invalid jsonpath item type for .replace() to");
 

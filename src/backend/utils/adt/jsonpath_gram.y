@@ -43,6 +43,7 @@ static bool makeItemLikeRegex(JsonPathParseItem *expr,
 							  JsonPathString *flags,
 							  JsonPathParseItem ** result,
 							  struct Node *escontext);
+static JsonPathParseItem *makeItemReplaceFunc(JsonPathParseItem *arg0, JsonPathParseItem *arg1);
 
 /*
  * Bison doesn't allocate anything that needs to live across parser calls,
@@ -281,7 +282,7 @@ accessor_op:
 	| '.' STR_REPLACEFUNC_P '(' str_method_arg_list ')'
 		{
 			if (list_length($4) == 2)
-				$$ = makeItemBinary(jpiReplaceFunc, linitial($4), lsecond($4));
+				$$ = makeItemReplaceFunc(linitial($4), lsecond($4));
 			else
 				ereturn(escontext, false,
 						(errcode(ERRCODE_SYNTAX_ERROR),
@@ -486,6 +487,17 @@ makeItemBinary(JsonPathItemType type, JsonPathParseItem *la, JsonPathParseItem *
 
 	v->value.args.left = la;
 	v->value.args.right = ra;
+
+	return v;
+}
+
+static JsonPathParseItem *
+makeItemReplaceFunc(JsonPathParseItem *arg0, JsonPathParseItem *arg1)
+{
+	JsonPathParseItem *v = makeItemType(jpiReplaceFunc);
+
+	v->value.method_args.arg0 = arg0;
+	v->value.method_args.arg1 = arg1;
 
 	return v;
 }
