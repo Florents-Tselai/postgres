@@ -303,6 +303,8 @@ static JsonPathExecResult executeNumericItemMethod(JsonPathExecContext *cxt,
 												   JsonValueList *found);
 static JsonPathExecResult executeDateTimeMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
 												JsonbValue *jb, JsonValueList *found);
+static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
+												JsonbValue *jb, JsonValueList *found);
 static JsonPathExecResult executeKeyValueMethod(JsonPathExecContext *cxt,
 												JsonPathItem *jsp, JsonbValue *jb, JsonValueList *found);
 static JsonPathExecResult appendBoolResult(JsonPathExecContext *cxt,
@@ -1660,108 +1662,14 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 			}
 			break;
 
-		case jpiReplaceFunc:
-			{
-				JsonbValue	jbv;
-				char		*replacedTxt;
-				char		*txt = NULL;
-
-				if (unwrap && JsonbType(jb) == jbvArray)
-					return executeItemUnwrapTargetArray(cxt, jsp, jb, found,false);
-
-				if (jb->type == jbvString) {
-					/* Value is not necessarily null-terminated, so we do pnstrdup() here. */
-					txt = pnstrdup(jb->val.string.val, jb->val.string.len);
-
-					res = jperOk;
-				}
-
-				if (res == jperNotFound) {
-					/* TODO: probably need ERRCODE for that? */
-					RETURN_ERROR(ereport(ERROR,
-										 (errcode(ERRCODE_INVALID_ARGUMENT_FOR_SQL_JSON_DATETIME_FUNCTION),
-										  errmsg("jsonpath item method .%s() can only be applied to a string",
-												 jspOperationName(jsp->type)))));
-				}
-				if (jsp->content.method_args.arg0 && jsp->content.method_args.arg1)
-				{
-					char		*from_str, *to_str;
-					int			from_len, to_len;
-
-					jspGetArg0(jsp, &elem);
-					if (elem.type != jpiString)
-						elog(ERROR, "invalid jsonpath item type for .replace() from");
-
-					from_str = jspGetString(&elem, &from_len);
-
-					jspGetArg1(jsp, &elem);
-					if (elem.type != jpiString)
-						elog(ERROR, "invalid jsonpath item type for .replace() to");
-
-					to_str = jspGetString(&elem, &to_len);
-
-					replacedTxt = TextDatumGetCString(DirectFunctionCall3Coll(replace_text,
-						C_COLLATION_OID,
-						CStringGetTextDatum(txt),
-						CStringGetTextDatum(from_str),
-						CStringGetTextDatum(to_str)));
-
-					jb = &jbv;
-					jb->type = jbvString;
-					jb->val.string.val = replacedTxt;
-					jb->val.string.len = strlen(replacedTxt);
-				}
-				else {
-					RETURN_ERROR(ereport(ERROR,
-											 (errcode(ERRCODE_INVALID_ARGUMENT_FOR_SQL_JSON_DATETIME_FUNCTION),
-											  errmsg("jsonpath item method .%s() can only be applied to a boolean, string, numeric, or datetime value",
-													 jspOperationName(jsp->type)))));
-					break;
-				}
-
-				res = executeNextItem(cxt, jsp, NULL, jb, found, true);
-			}
-			break;
-
 		case jpiStrLowerFunc:
 		case jpiStrUpperFunc:
+		case jpiReplaceFunc:
 		{
-			JsonbValue	jbv;
-			char		*tmp = NULL;
-			char		*resStr;
-
 			if (unwrap && JsonbType(jb) == jbvArray)
 				return executeItemUnwrapTargetArray(cxt, jsp, jb, found, false);
 
-			switch (JsonbType(jb))
-			{
-				case jbvString:
-					tmp = pnstrdup(jb->val.string.val,
-									   jb->val.string.len);
-				break;
-				default:
-					RETURN_ERROR(ereport(ERROR,
-										 (errcode(ERRCODE_NON_NUMERIC_SQL_JSON_ITEM),
-										  errmsg("jsonpath item method .%s() can only be applied to a boolean, string, numeric, or datetime value",
-												 jspOperationName(jsp->type)))));
-				break;
-			}
-			switch (jsp->type)
-			{
-				case jpiStrLowerFunc:
-					resStr = TextDatumGetCString(DirectFunctionCall1Coll(lower, C_COLLATION_OID, CStringGetTextDatum(tmp)));
-				case jpiStrUpperFunc:
-					resStr = TextDatumGetCString(DirectFunctionCall1Coll(upper, C_COLLATION_OID, CStringGetTextDatum(tmp)));
-				default: ;
-			}
-
-			jb = &jbv;
-			Assert(tmp != NULL);
-			jb->val.string.val = resStr;
-			jb->val.string.len = strlen(jb->val.string.val);
-			jb->type = jbvString;
-
-			res = executeNextItem(cxt, jsp, NULL, jb, found, true);
+			return executeStringInternalMethod(cxt, jsp, jb, found);
 		}
 		break;
 
@@ -2895,6 +2803,98 @@ executeDateTimeMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
 	jb->val.datetime.typid = typid;
 	jb->val.datetime.typmod = typmod;
 	jb->val.datetime.tz = tz;
+
+	return executeNextItem(cxt, jsp, &elem, jb, found, hasNext);
+}
+
+/*
+ * Implementation of .upper(), lower() et. al. methods,
+ * that forward their actual implementation to internal functions.
+ */
+static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
+												JsonbValue *jb, JsonValueList *found) {
+	Assert(	jsp->type == jpiStrLowerFunc ||
+			jsp->type == jpiStrUpperFunc ||
+			jsp->type == jpiReplaceFunc
+			);
+	JsonbValue	jbvbuf;
+	bool		hasNext;
+	JsonPathExecResult res = jperNotFound;
+	JsonPathItem elem;
+	Datum		str; /* Datum representation for the current string value. The first argument to internal functions */
+	char		*tmp = NULL;
+	char		*resStr = NULL;
+
+	if (!(jb = getScalar(jb, jbvString)))
+		RETURN_ERROR(ereport(ERROR,
+							 (errcode(ERRCODE_INVALID_ARGUMENT_FOR_SQL_JSON_DATETIME_FUNCTION),
+							  errmsg("jsonpath item method .%s() can only be applied to a string",
+									 jspOperationName(jsp->type)))));
+
+	tmp = pnstrdup(jb->val.string.val, jb->val.string.len);
+	str = CStringGetTextDatum(tmp);
+
+	/* Internal string functions that accept no arguments */
+	switch (jsp->type)
+	{
+		case jpiStrLowerFunc:
+			resStr = TextDatumGetCString(DirectFunctionCall1Coll(lower, DEFAULT_COLLATION_OID, str));
+			break;
+		case jpiStrUpperFunc:
+			resStr = TextDatumGetCString(DirectFunctionCall1Coll(upper, DEFAULT_COLLATION_OID, str));
+			break;
+		case jpiReplaceFunc:
+		{
+			char		*from_str, *to_str;
+			int			from_len, to_len;
+
+			jspGetArg0(jsp, &elem);
+			if (elem.type != jpiString)
+				elog(ERROR, "invalid jsonpath item type for .replace() from");
+
+			from_str = jspGetString(&elem, &from_len);
+
+			jspGetArg1(jsp, &elem);
+			if (elem.type != jpiString)
+				elog(ERROR, "invalid jsonpath item type for .replace() to");
+
+			to_str = jspGetString(&elem, &to_len);
+
+			resStr = TextDatumGetCString(DirectFunctionCall3Coll(replace_text,
+				C_COLLATION_OID,
+				CStringGetTextDatum(tmp),
+				CStringGetTextDatum(from_str),
+				CStringGetTextDatum(to_str)));
+			break;
+		}
+		default:
+			elog(ERROR, "unsupported jsonpath item type: %d", jsp->type);
+	}
+
+	if (resStr)
+		res = jperOk;
+
+	hasNext = jspGetNext(jsp, &elem);
+
+	if (!hasNext && !found)
+		return res;
+
+	jb = hasNext ? &jbvbuf : palloc(sizeof(*jb));
+
+	/* Create the appropriate jb value to return */
+	switch (jsp->type)
+	{
+		/* Cases for functions that return text */
+		case jpiStrLowerFunc:
+		case jpiStrUpperFunc:
+		case jpiReplaceFunc:
+			jb->type = jbvString;
+			jb->val.string.val = resStr;
+			jb->val.string.len = strlen(jb->val.string.val);
+		default:
+			;
+			/* cant' happen */
+	}
 
 	return executeNextItem(cxt, jsp, &elem, jb, found, hasNext);
 }

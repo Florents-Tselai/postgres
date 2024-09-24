@@ -1217,6 +1217,7 @@ jspGetNext(JsonPathItem *v, JsonPathItem *a)
 			   v->type == jpiStringFunc ||
 			   v->type == jpiReplaceFunc ||
 			   v->type == jpiStrLowerFunc ||
+			   v->type == jpiStrUpperFunc ||
 			   v->type == jpiTime ||
 			   v->type == jpiTimeTz ||
 			   v->type == jpiTimestamp ||

@@ -453,6 +453,12 @@ select '$.upper()'::jsonpath;
  $.upper()
 (1 row)
 
+select '$.lower().upper().lower().replace("hello","bye")'::jsonpath;
+                     jsonpath                     
+--------------------------------------------------
+ $.lower().upper().lower().replace("hello","bye")
+(1 row)
+
 select '$.time()'::jsonpath;
  jsonpath 
 ----------
