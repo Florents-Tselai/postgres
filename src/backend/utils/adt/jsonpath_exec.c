@@ -2869,42 +2869,60 @@ executeDateTimeMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
 	return executeNextItem(cxt, jsp, &elem, jb, found, hasNext);
 }
 
+/*
+ * Implementation of .upper(), lower() et. al. methods,
+ * that forward their actual implementation to internal functions.
+ */
 static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
 												JsonbValue *jb, JsonValueList *found) {
+	Assert(	jsp->type == jpiStrLowerFunc ||
+			jsp->type == jpiStrUpperFunc
+			);
 	JsonbValue	jbv;
+	Datum		str; /* Datum representation for the current string value. The first argument to internal functions */
 	char		*tmp = NULL;
 	char		*resStr;
 
-	switch (JsonbType(jb))
+	if (JsonbType(jb) == jbvString)
 	{
-		case jbvString:
-			tmp = pnstrdup(jb->val.string.val,
+		tmp = pnstrdup(jb->val.string.val,
 							   jb->val.string.len);
-		break;
-		default:
-			RETURN_ERROR(ereport(ERROR,
-								 (errcode(ERRCODE_NON_NUMERIC_SQL_JSON_ITEM),
-								  errmsg("jsonpath item method .%s() can only be applied to a boolean, string, numeric, or datetime value",
-										 jspOperationName(jsp->type)))));
-		break;
+		Assert(tmp != NULL);
+		str = CStringGetTextDatum(tmp);
 	}
+	else
+	{
+		RETURN_ERROR(ereport(ERROR,
+								 (errcode(ERRCODE_NON_NUMERIC_SQL_JSON_ITEM),
+								  errmsg("jsonpath item method .%s() can only be applied to a string value",
+										 jspOperationName(jsp->type)))));
+	}
+
+	/* Internal string functions that accept no arguments */
 	switch (jsp->type)
 	{
 		case jpiStrLowerFunc:
-			resStr = TextDatumGetCString(DirectFunctionCall1Coll(lower, C_COLLATION_OID, CStringGetTextDatum(tmp)));
+			resStr = TextDatumGetCString(DirectFunctionCall1Coll(lower, C_COLLATION_OID, str));
 		case jpiStrUpperFunc:
-			resStr = TextDatumGetCString(DirectFunctionCall1Coll(upper, C_COLLATION_OID, CStringGetTextDatum(tmp)));
+			resStr = TextDatumGetCString(DirectFunctionCall1Coll(upper, C_COLLATION_OID, str));
 		default: ;
 	}
 
 	jb = &jbv;
-	Assert(tmp != NULL);
-	jb->val.string.val = resStr;
-	jb->val.string.len = strlen(jb->val.string.val);
-	jb->type = jbvString;
+
+	/* Create the appropriate jb value to return */
+	switch (jsp->type)
+	{
+		/* Cases for functions that return text */
+		case jpiStrLowerFunc:
+		case jpiStrUpperFunc:
+			jb->val.string.val = resStr;
+			jb->val.string.len = strlen(jb->val.string.val);
+			jb->type = jbvString;
+		default: ;
+	}
 
 	return executeNextItem(cxt, jsp, NULL, jb, found, true);
-
 }
 
 /*
