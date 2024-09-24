@@ -2719,6 +2719,13 @@ select jsonb_path_query('"2023-08-15 12:34:56"', '$.timestamp().string()');
 (1 row)
 
 rollback;
+-- test .lower()
+select jsonb_path_query('"HELLO"', '$.lower()');
+ jsonb_path_query 
+------------------
+ "hello"
+(1 row)
+
 -- Test .replace()
 select jsonb_path_query('null', '$.replace("x", "bye")');
 ERROR:  jsonpath item method .replace() can only be applied to a string

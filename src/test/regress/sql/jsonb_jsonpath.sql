@@ -619,6 +619,9 @@ select jsonb_path_query('"2023-08-15 12:34:56 +5:30"', '$.timestamp_tz().string(
 select jsonb_path_query('"2023-08-15 12:34:56"', '$.timestamp().string()');
 rollback;
 
+-- test .lower()
+select jsonb_path_query('"HELLO"', '$.lower()');
+
 -- Test .replace()
 select jsonb_path_query('null', '$.replace("x", "bye")');
 select jsonb_path_query('null', '$.replace("x", "bye")', silent => true);
