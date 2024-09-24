@@ -116,6 +116,7 @@ typedef enum JsonPathItemType
 	jpiTimestamp,				/* .timestamp() item method */
 	jpiTimestampTz,				/* .timestamp_tz() item method */
 	jpiReplaceFunc,				/* .replace() item method */
+	jpiStrLowerFunc,			/* .lower() item method */
 } JsonPathItemType;
 
 /* XQuery regex mode flags for LIKE_REGEX predicate */

@@ -488,9 +488,10 @@ flattenJsonPathParseItem(StringInfo buf, int *result, struct Node *escontext,
 		case jpiInteger:
 		case jpiNumber:
 		case jpiStringFunc:
+		case jpiStrLowerFunc:
 			break;
 		default:
-			elog(ERROR, "unrecognized jsonpath item type: %d", item->type);
+			elog(ERROR, "unrecognized jsonpath iiitem type: %d", item->type);
 	}
 
 	if (item->next)
@@ -877,6 +878,9 @@ printJsonPathItem(StringInfo buf, JsonPathItem *v, bool inKey,
 			}
 			appendStringInfoChar(buf, ')');
 			break;
+		case jpiStrLowerFunc:
+			appendStringInfoString(buf, ".lower()");
+			break;
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", v->type);
 	}
@@ -954,6 +958,8 @@ jspOperationName(JsonPathItemType type)
 			return "string";
 		case jpiReplaceFunc:
 			return "replace";
+		case jpiStrLowerFunc:
+			return "lower";
 		case jpiTime:
 			return "time";
 		case jpiTimeTz:
@@ -1064,6 +1070,7 @@ jspInitByBuffer(JsonPathItem *v, char *base, int32 pos)
 		case jpiInteger:
 		case jpiNumber:
 		case jpiStringFunc:
+		case jpiStrLowerFunc:
 			break;
 		case jpiString:
 		case jpiKey:
@@ -1202,6 +1209,7 @@ jspGetNext(JsonPathItem *v, JsonPathItem *a)
 			   v->type == jpiNumber ||
 			   v->type == jpiStringFunc ||
 			   v->type == jpiReplaceFunc ||
+			   v->type == jpiStrLowerFunc ||
 			   v->type == jpiTime ||
 			   v->type == jpiTimeTz ||
 			   v->type == jpiTimestamp ||
@@ -1572,6 +1580,7 @@ jspIsMutableWalker(JsonPathItem *jpi, struct JsonPathMutableContext *cxt)
 			case jpiNumber:
 			case jpiStringFunc:
 			case jpiReplaceFunc:
+			case jpiStrLowerFunc:
 				status = jpdsNonDateTime;
 				break;
 
