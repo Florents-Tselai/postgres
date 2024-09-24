@@ -1723,6 +1723,48 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 			}
 			break;
 
+		case jpiStrLowerFunc:
+		case jpiStrUpperFunc:
+		{
+			JsonbValue	jbv;
+			char		*tmp = NULL;
+			char		*resStr;
+
+			if (unwrap && JsonbType(jb) == jbvArray)
+				return executeItemUnwrapTargetArray(cxt, jsp, jb, found, false);
+
+			switch (JsonbType(jb))
+			{
+				case jbvString:
+					tmp = pnstrdup(jb->val.string.val,
+									   jb->val.string.len);
+				break;
+				default:
+					RETURN_ERROR(ereport(ERROR,
+										 (errcode(ERRCODE_NON_NUMERIC_SQL_JSON_ITEM),
+										  errmsg("jsonpath item method .%s() can only be applied to a boolean, string, numeric, or datetime value",
+												 jspOperationName(jsp->type)))));
+				break;
+			}
+			switch (jsp->type)
+			{
+				case jpiStrLowerFunc:
+					resStr = TextDatumGetCString(DirectFunctionCall1Coll(lower, C_COLLATION_OID, CStringGetTextDatum(tmp)));
+				case jpiStrUpperFunc:
+					resStr = TextDatumGetCString(DirectFunctionCall1Coll(upper, C_COLLATION_OID, CStringGetTextDatum(tmp)));
+				default: ;
+			}
+
+			jb = &jbv;
+			Assert(tmp != NULL);
+			jb->val.string.val = resStr;
+			jb->val.string.len = strlen(jb->val.string.val);
+			jb->type = jbvString;
+
+			res = executeNextItem(cxt, jsp, NULL, jb, found, true);
+		}
+		break;
+
 
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", jsp->type);

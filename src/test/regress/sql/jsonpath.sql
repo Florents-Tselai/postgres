@@ -79,6 +79,8 @@ select '$.date()'::jsonpath;
 select '$.decimal(4,2)'::jsonpath;
 select '$.string()'::jsonpath;
 select '$.replace("hello","bye")'::jsonpath;
+select '$.lower()'::jsonpath;
+select '$.upper()'::jsonpath;
 select '$.time()'::jsonpath;
 select '$.time(6)'::jsonpath;
 select '$.time_tz()'::jsonpath;

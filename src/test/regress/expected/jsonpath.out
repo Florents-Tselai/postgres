@@ -441,6 +441,18 @@ select '$.replace("hello","bye")'::jsonpath;
  $.replace("hello","bye")
 (1 row)
 
+select '$.lower()'::jsonpath;
+ jsonpath  
+-----------
+ $.lower()
+(1 row)
+
+select '$.upper()'::jsonpath;
+ jsonpath  
+-----------
+ $.upper()
+(1 row)
+
 select '$.time()'::jsonpath;
  jsonpath 
 ----------

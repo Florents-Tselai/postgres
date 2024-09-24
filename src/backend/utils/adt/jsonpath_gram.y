@@ -85,7 +85,7 @@ static JsonPathParseItem *makeItemReplaceFunc(JsonPathParseItem *arg0, JsonPathP
 %token	<str>		DATETIME_P
 %token	<str>		BIGINT_P BOOLEAN_P DATE_P DECIMAL_P INTEGER_P NUMBER_P
 %token	<str>		STRINGFUNC_P TIME_P TIME_TZ_P TIMESTAMP_P TIMESTAMP_TZ_P
-%token	<str>		STR_REPLACEFUNC_P
+%token	<str>		STR_REPLACEFUNC_P STR_LOWER_P STR_UPPER_P
 
 %type	<result>	result
 
@@ -392,6 +392,8 @@ method:
 	| INTEGER_P						{ $$ = jpiInteger; }
 	| NUMBER_P						{ $$ = jpiNumber; }
 	| STRINGFUNC_P					{ $$ = jpiStringFunc; }
+	| STR_LOWER_P					{ $$ = jpiStrLowerFunc; }
+	| STR_UPPER_P					{ $$ = jpiStrUpperFunc; }
 	;
 %%
 
