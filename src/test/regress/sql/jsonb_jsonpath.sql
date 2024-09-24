@@ -622,6 +622,9 @@ rollback;
 -- test .lower()
 select jsonb_path_query('"HELLO"', '$.lower()');
 
+-- test .upper()
+select jsonb_path_query('"hello"', '$.upper()');
+
 -- Test .replace()
 select jsonb_path_query('null', '$.replace("x", "bye")');
 select jsonb_path_query('null', '$.replace("x", "bye")', silent => true);
