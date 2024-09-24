@@ -2930,6 +2930,7 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 			jb->val.string.val = resStr;
 			jb->val.string.len = strlen(jb->val.string.val);
 		default:
+			;
 			/* cant' happen */
 	}
 
