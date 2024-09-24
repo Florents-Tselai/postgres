@@ -1754,6 +1754,7 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 				case jpiStrUpperFunc:
 					strfunc = upper;
 				default:
+					strfunc = NULL;
 			}
 
 			resStr = TextDatumGetCString(DirectFunctionCall1Coll(strfunc, C_COLLATION_OID, CStringGetTextDatum(tmp)));
