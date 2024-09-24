@@ -491,7 +491,7 @@ flattenJsonPathParseItem(StringInfo buf, int *result, struct Node *escontext,
 		case jpiStrLowerFunc:
 			break;
 		default:
-			elog(ERROR, "unrecognized jsonpath iiitem type: %d", item->type);
+			elog(ERROR, "unrecognized jsonpath item type: %d", item->type);
 	}
 
 	if (item->next)
