@@ -667,9 +667,11 @@ select jsonb_path_query('"hello world"', '$.replace("hello","bye")');
 select jsonb_path_query('"hello world"', '$.replace("hello","bye") starts with "bye"');
 
 -- Test string methods play nicely together
+select jsonb_path_query('"hello world"', '$.replace("hello","bye").upper()');
 select jsonb_path_query('"hElLo WorlD"', '$.lower().upper().lower().replace("hello","bye")');
 select jsonb_path_query('"hElLo WorlD"', '$.upper().lower().upper().replace("HELLO", "BYE")');
 select jsonb_path_query('"hElLo WorlD"', '$.lower().upper().lower().replace("hello","bye") starts with "bye"');
+
 
 -- Test .time()
 select jsonb_path_query('null', '$.time()');

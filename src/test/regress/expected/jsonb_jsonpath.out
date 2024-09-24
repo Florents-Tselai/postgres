@@ -2884,6 +2884,12 @@ select jsonb_path_query('"hello world"', '$.replace("hello","bye") starts with "
 (1 row)
 
 -- Test string methods play nicely together
+select jsonb_path_query('"hello world"', '$.replace("hello","bye").upper()');
+ jsonb_path_query 
+------------------
+ "BYE WORLD"
+(1 row)
+
 select jsonb_path_query('"hElLo WorlD"', '$.lower().upper().lower().replace("hello","bye")');
  jsonb_path_query 
 ------------------
