@@ -413,6 +413,7 @@ static const JsonPathKeyword keywords[] = {
 	{ 5, true,	FALSE_P,	"false"},
 	{ 5, false,	FLOOR_P,	"floor"},
 	{ 5, false, STR_LOWER_P, "lower"},
+	{ 5, false, STR_UPPER_P, "upper"},
 	{ 6, false,	BIGINT_P,	"bigint"},
 	{ 6, false,	DOUBLE_P,	"double"},
 	{ 6, false,	EXISTS_P,	"exists"},

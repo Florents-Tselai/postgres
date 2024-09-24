@@ -1724,9 +1724,11 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 			break;
 
 		case jpiStrLowerFunc:
+		case jpiStrUpperFunc:
 		{
 			JsonbValue	jbv;
-			char	   *tmp = NULL;
+			char		*tmp = NULL;
+			char		*resStr;
 
 			if (unwrap && JsonbType(jb) == jbvArray)
 				return executeItemUnwrapTargetArray(cxt, jsp, jb, found, false);
@@ -1744,12 +1746,17 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 												 jspOperationName(jsp->type)))));
 				break;
 			}
-
-			char *resStr = TextDatumGetCString(DirectFunctionCall1Coll(lower,
-				C_COLLATION_OID, CStringGetTextDatum(tmp)));
+			switch (jsp->type)
+			{
+				case jpiStrLowerFunc:
+					resStr = TextDatumGetCString(DirectFunctionCall1Coll(lower, C_COLLATION_OID, CStringGetTextDatum(tmp)));
+				case jpiStrUpperFunc:
+					resStr = TextDatumGetCString(DirectFunctionCall1Coll(upper, C_COLLATION_OID, CStringGetTextDatum(tmp)));
+				default: ;
+			}
 
 			jb = &jbv;
-			Assert(tmp != NULL);	/* We must have set tmp above */
+			Assert(tmp != NULL);
 			jb->val.string.val = resStr;
 			jb->val.string.len = strlen(jb->val.string.val);
 			jb->type = jbvString;

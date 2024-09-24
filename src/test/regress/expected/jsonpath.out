@@ -447,6 +447,12 @@ select '$.lower()'::jsonpath;
  $.lower()
 (1 row)
 
+select '$.upper()'::jsonpath;
+ jsonpath  
+-----------
+ $.upper()
+(1 row)
+
 select '$.time()'::jsonpath;
  jsonpath 
 ----------

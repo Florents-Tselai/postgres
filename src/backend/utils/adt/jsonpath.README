@@ -17,11 +17,11 @@ This `jpiMyMethod` will be
 used in switch cases across the rest of the code
 
 In `jsonpath.c`:
-the case `jpiMyMethod` switch must be handled in the following functions
+you must handle the switch for `jpiMyMethod` in the following functions:
 
 * `flattenJsonPathParseItem`
 * `printJsonPathItem`
-* `jspInitByBuffer`: take care to proplerly handle arguments if any. 
+* `jspInitByBuffer`: take care to properly handle arguments if any. 
 See cases items for inspiration 
 * `jspOperationName`
 * `jspGetNext`: add a new `Assert`

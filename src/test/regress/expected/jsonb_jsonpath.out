@@ -2723,7 +2723,14 @@ rollback;
 select jsonb_path_query('"HELLO"', '$.lower()');
  jsonb_path_query 
 ------------------
- "hello"
+ "HELLO"
+(1 row)
+
+-- test .upper()
+select jsonb_path_query('"hello"', '$.upper()');
+ jsonb_path_query 
+------------------
+ "HELLO"
 (1 row)
 
 -- Test .replace()
