@@ -1721,7 +1721,7 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 					break;
 				}
 
-				res = executeNextItem(cxt, jsp, NULL, jb, found, true);
+				return executeNextItem(cxt, jsp, NULL, jb, found, true);
 			}
 			break;
 
@@ -2878,37 +2878,46 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 	Assert(	jsp->type == jpiStrLowerFunc ||
 			jsp->type == jpiStrUpperFunc
 			);
-	JsonbValue	jbv;
+	JsonbValue	jbvbuf;
+	bool		hasNext;
+	JsonPathExecResult res = jperNotFound;
+	JsonPathItem elem;
 	Datum		str; /* Datum representation for the current string value. The first argument to internal functions */
 	char		*tmp = NULL;
-	char		*resStr;
+	char		*resStr = NULL;
 
-	if (JsonbType(jb) == jbvString)
-	{
-		tmp = pnstrdup(jb->val.string.val,
-							   jb->val.string.len);
-		Assert(tmp != NULL);
-		str = CStringGetTextDatum(tmp);
-	}
-	else
-	{
+	if (!(jb = getScalar(jb, jbvString)))
 		RETURN_ERROR(ereport(ERROR,
-								 (errcode(ERRCODE_NON_NUMERIC_SQL_JSON_ITEM),
-								  errmsg("jsonpath item method .%s() can only be applied to a string value",
-										 jspOperationName(jsp->type)))));
-	}
+							 (errcode(ERRCODE_INVALID_ARGUMENT_FOR_SQL_JSON_DATETIME_FUNCTION),
+							  errmsg("jsonpath item method .%s() can only be applied to a string",
+									 jspOperationName(jsp->type)))));
+
+
+	tmp = pnstrdup(jb->val.string.val, jb->val.string.len);
+	str = CStringGetTextDatum(tmp);
 
 	/* Internal string functions that accept no arguments */
 	switch (jsp->type)
 	{
 		case jpiStrLowerFunc:
-			resStr = TextDatumGetCString(DirectFunctionCall1Coll(lower, C_COLLATION_OID, str));
+			resStr = TextDatumGetCString(DirectFunctionCall1Coll(lower, DEFAULT_COLLATION_OID, str));
+			break;
 		case jpiStrUpperFunc:
-			resStr = TextDatumGetCString(DirectFunctionCall1Coll(upper, C_COLLATION_OID, str));
-		default: ;
+			resStr = TextDatumGetCString(DirectFunctionCall1Coll(upper, DEFAULT_COLLATION_OID, str));
+			break;
+		default:
+			elog(ERROR, "unsupported jsonpath item type: %d", jsp->type);
 	}
 
-	jb = &jbv;
+	if (resStr)
+		res = jperOk;
+
+	hasNext = jspGetNext(jsp, &elem);
+
+	if (!hasNext && !found)
+		return res;
+
+	jb = hasNext ? &jbvbuf : palloc(sizeof(*jb));
 
 	/* Create the appropriate jb value to return */
 	switch (jsp->type)
@@ -2916,13 +2925,15 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 		/* Cases for functions that return text */
 		case jpiStrLowerFunc:
 		case jpiStrUpperFunc:
+		case jpiReplaceFunc:
+			jb->type = jbvString;
 			jb->val.string.val = resStr;
 			jb->val.string.len = strlen(jb->val.string.val);
-			jb->type = jbvString;
-		default: ;
+		default:
+			/* cant' happen */
 	}
 
-	return executeNextItem(cxt, jsp, NULL, jb, found, true);
+	return executeNextItem(cxt, jsp, &elem, jb, found, hasNext);
 }
 
 /*
