@@ -2976,6 +2976,62 @@ select jsonb_path_query_array('["maybe", "yes", "no"]', '$[*].upper().type()');
  ["string", "string", "string"]
 (1 row)
 
+-- test .initcap()
+select jsonb_path_query('null', '$.initcap()');
+ERROR:  jsonpath item method .initcap() can only be applied to a string
+select jsonb_path_query('null', '$.initcap()', silent => true);
+ jsonb_path_query 
+------------------
+(0 rows)
+
+select jsonb_path_query('[]', '$.initcap()');
+ jsonb_path_query 
+------------------
+(0 rows)
+
+select jsonb_path_query('[]', 'strict $.initcap()');
+ERROR:  jsonpath item method .initcap() can only be applied to a string
+select jsonb_path_query('{}', '$.initcap()');
+ERROR:  jsonpath item method .initcap() can only be applied to a string
+select jsonb_path_query('[]', 'strict $.initcap()', silent => true);
+ jsonb_path_query 
+------------------
+(0 rows)
+
+select jsonb_path_query('{}', '$.initcap()', silent => true);
+ jsonb_path_query 
+------------------
+(0 rows)
+
+select jsonb_path_query('1.23', '$.initcap()');
+ERROR:  jsonpath item method .initcap() can only be applied to a string
+select jsonb_path_query('"1.23"', '$.initcap()');
+ jsonb_path_query 
+------------------
+ "1.23"
+(1 row)
+
+select jsonb_path_query('"1.23aaa"', '$.initcap()');
+ jsonb_path_query 
+------------------
+ "1.23aaa"
+(1 row)
+
+select jsonb_path_query('1234', '$.initcap()');
+ERROR:  jsonpath item method .initcap() can only be applied to a string
+select jsonb_path_query('true', '$.initcap()');
+ERROR:  jsonpath item method .initcap() can only be applied to a string
+select jsonb_path_query('1234', '$.initcap().type()');
+ERROR:  jsonpath item method .initcap() can only be applied to a string
+select jsonb_path_query('[2, true]', '$.initcap()');
+ERROR:  jsonpath item method .initcap() can only be applied to a string
+select jsonb_path_query('["maybe yes", "probably no"]', '$.initcap()');
+ jsonb_path_query 
+------------------
+ "Maybe Yes"
+ "Probably No"
+(2 rows)
+
 -- Test .replace()
 select jsonb_path_query('null', '$.replace("x", "bye")');
 ERROR:  jsonpath item method .replace() can only be applied to a string
