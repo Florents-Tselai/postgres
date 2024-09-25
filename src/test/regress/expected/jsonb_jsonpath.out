@@ -2719,6 +2719,31 @@ select jsonb_path_query('"2023-08-15 12:34:56"', '$.timestamp().string()');
 (1 row)
 
 rollback;
+-- test .ltrim()
+select jsonb_path_query('"   hello"', '$.ltrim(" ")');
+ jsonb_path_query 
+------------------
+ "hello"
+(1 row)
+
+select jsonb_path_query('"hello   "', '$.ltrim(" ")');
+ jsonb_path_query 
+------------------
+ "hello   "
+(1 row)
+
+select jsonb_path_query('"   hello"', '$.ltrim()');
+ jsonb_path_query 
+------------------
+ "hello"
+(1 row)
+
+select jsonb_path_query('"hello   "', '$.ltrim()');
+ jsonb_path_query 
+------------------
+ "hello   "
+(1 row)
+
 -- test .lower()
 select jsonb_path_query('null', '$.lower()');
 ERROR:  jsonpath item method .lower() can only be applied to a string

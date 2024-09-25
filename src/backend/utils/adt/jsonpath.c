@@ -1328,7 +1328,8 @@ jspGetString(JsonPathItem *v, int32 *len)
 {
 	Assert(v->type == jpiKey ||
 		   v->type == jpiString ||
-		   v->type == jpiVariable);
+		   v->type == jpiVariable ||
+		   v->type == jpiStringFunc);
 
 	if (len)
 		*len = v->content.value.datalen;
