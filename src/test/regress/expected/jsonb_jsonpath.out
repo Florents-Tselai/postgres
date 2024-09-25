@@ -2744,6 +2744,66 @@ select jsonb_path_query('"   hello   "', '$.ltrim()');
  "hello   "
 (1 row)
 
+select jsonb_path_query('null', '$.ltrim()');
+ERROR:  jsonpath item method .ltrim() can only be applied to a string
+select jsonb_path_query('null', '$.ltrim()', silent => true);
+ jsonb_path_query 
+------------------
+(0 rows)
+
+select jsonb_path_query('[]', '$.ltrim()');
+ jsonb_path_query 
+------------------
+(0 rows)
+
+select jsonb_path_query('[]', 'strict $.ltrim()');
+ERROR:  jsonpath item method .ltrim() can only be applied to a string
+select jsonb_path_query('{}', '$.ltrim()');
+ERROR:  jsonpath item method .ltrim() can only be applied to a string
+select jsonb_path_query('[]', 'strict $.ltrim()', silent => true);
+ jsonb_path_query 
+------------------
+(0 rows)
+
+select jsonb_path_query('{}', '$.ltrim()', silent => true);
+ jsonb_path_query 
+------------------
+(0 rows)
+
+select jsonb_path_query('1.23', '$.ltrim()');
+ERROR:  jsonpath item method .ltrim() can only be applied to a string
+select jsonb_path_query('"1.23"', '$.ltrim()');
+ jsonb_path_query 
+------------------
+ "1.23"
+(1 row)
+
+select jsonb_path_query('"1.23aaa"', '$.ltrim()');
+ jsonb_path_query 
+------------------
+ "1.23aaa"
+(1 row)
+
+select jsonb_path_query('1234', '$.ltrim()');
+ERROR:  jsonpath item method .ltrim() can only be applied to a string
+select jsonb_path_query('true', '$.ltrim()');
+ERROR:  jsonpath item method .ltrim() can only be applied to a string
+select jsonb_path_query('1234', '$.ltrim().type()');
+ERROR:  jsonpath item method .ltrim() can only be applied to a string
+select jsonb_path_query('[2, true]', '$.ltrim()');
+ERROR:  jsonpath item method .ltrim() can only be applied to a string
+select jsonb_path_query_array('["  maybe  ", "  yes", "  no"]', '$[*].ltrim()');
+  jsonb_path_query_array  
+--------------------------
+ ["maybe  ", "yes", "no"]
+(1 row)
+
+select jsonb_path_query_array('["  maybe  ", "  yes", "  no"]', '$[*].ltrim().type()');
+     jsonb_path_query_array     
+--------------------------------
+ ["string", "string", "string"]
+(1 row)
+
 -- test .rtrim()
 select jsonb_path_query('"   hello   "', '$.rtrim(" ")');
  jsonb_path_query 
@@ -2978,6 +3038,12 @@ select jsonb_path_query('"hElLo WorlD"', '$.upper().lower().upper().replace("HEL
 (1 row)
 
 select jsonb_path_query('"hElLo WorlD"', '$.lower().upper().lower().replace("hello","bye") starts with "bye"');
+ jsonb_path_query 
+------------------
+ true
+(1 row)
+
+select jsonb_path_query('"   hElLo WorlD "', '$.btrim().lower().upper().lower().replace("hello","bye") starts with "bye"');
  jsonb_path_query 
 ------------------
  true
