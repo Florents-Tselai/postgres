@@ -631,6 +631,12 @@ select jsonb_path_query('"   hello   "', '$.rtrim(" ")');
 select jsonb_path_query('"   hello   "', '$.rtrim()');
 select jsonb_path_query('"   hello   "', '$.rtrim()');
 
+-- test .btrim()
+select jsonb_path_query('"   hello   "', '$.btrim(" ")');
+select jsonb_path_query('"   hello   "', '$.btrim(" ")');
+select jsonb_path_query('"   hello   "', '$.btrim()');
+select jsonb_path_query('"   hello   "', '$.btrim()');
+
 -- test .lower()
 select jsonb_path_query('null', '$.lower()');
 select jsonb_path_query('null', '$.lower()', silent => true);
