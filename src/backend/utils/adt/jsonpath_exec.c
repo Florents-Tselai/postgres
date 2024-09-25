@@ -2826,13 +2826,16 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 			jsp->type == jpiStrBtrimFunc ||
 			jsp->type == jpiStrInitcapFunc ||
 			jsp->type == jpiStrSplitPartFunc);
+
 	JsonbValue	jbvbuf;
 	bool		hasNext;
 	JsonPathExecResult res = jperNotFound;
 	JsonPathItem elem;
-	Datum		str; /* Datum representation for the current string value. The first argument to internal functions */
+	Datum		str;		/* Current string value we're working on, aka the first text argument to internal functions */
+	PGFunction func = NULL; /* The internal function we call for each item*/
+	char		*funcRes = NULL; /* cstring result that func returns */
 	char		*tmp = NULL;
-	char		*resStr = NULL;
+
 
 	if (!(jb = getScalar(jb, jbvString)))
 		RETURN_ERROR(ereport(ERROR,
@@ -2843,16 +2846,35 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 	tmp = pnstrdup(jb->val.string.val, jb->val.string.len);
 	str = CStringGetTextDatum(tmp);
 
-	/* Internal string functions that accept no arguments */
+	/*
+	 * We toggle on the jsp type, for each case:
+	 * a) Find the appropriate PGFunction to apply
+	 * b) Build the arguments
+	 *
+	 */
 	switch (jsp->type)
 	{
+		/* methods without arguments */
+		case jpiStrLowerFunc:
+			func = lower;
+			funcRes = TextDatumGetCString(DirectFunctionCall1Coll(func, DEFAULT_COLLATION_OID, str));
+			break;
+		case jpiStrUpperFunc:
+			func = upper;
+			funcRes = TextDatumGetCString(DirectFunctionCall1Coll(func, DEFAULT_COLLATION_OID, str));
+			break;
+		case jpiStrInitcapFunc:
+			func = initcap;
+			funcRes = TextDatumGetCString(DirectFunctionCall1Coll(func, DEFAULT_COLLATION_OID, str));
+			break;
+
+		/* methods with 1 argument */
 		case jpiStrLtrimFunc:
 		case jpiStrRtrimFunc:
 		case jpiStrBtrimFunc:
 		{
-			char	   *characters_str;
-			int			characters_len;
-			PGFunction	func = NULL;
+			char	*characters_str = " "; /*  the default for trim functions */
+			int		characters_len = 1;
 
 			switch (jsp->type)
 			{
@@ -2875,27 +2897,15 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 					elog(ERROR, "invalid jsonpath item type for .%s() argument", jspOperationName(jsp->type));
 
 				characters_str = jspGetString(&elem, &characters_len);
-				resStr = TextDatumGetCString(DirectFunctionCall2Coll(func,
-					DEFAULT_COLLATION_OID, str,
-					CStringGetTextDatum(characters_str)));
-				break;
 			}
 
-			resStr = TextDatumGetCString(DirectFunctionCall2Coll(func,
+			funcRes = TextDatumGetCString(DirectFunctionCall2Coll(func,
 					DEFAULT_COLLATION_OID, str,
-					CStringGetTextDatum(" ")));
+					CStringGetTextDatum(characters_str)));
 			break;
 		}
 
-		case jpiStrLowerFunc:
-			resStr = TextDatumGetCString(DirectFunctionCall1Coll(lower, DEFAULT_COLLATION_OID, str));
-			break;
-		case jpiStrUpperFunc:
-			resStr = TextDatumGetCString(DirectFunctionCall1Coll(upper, DEFAULT_COLLATION_OID, str));
-			break;
-		case jpiStrInitcapFunc:
-			resStr = TextDatumGetCString(DirectFunctionCall1Coll(initcap, DEFAULT_COLLATION_OID, str));
-			break;
+		/* method with 2 arguments. Keep them separate; better be explicit */
 		case jpiReplaceFunc:
 		{
 			char		*from_str, *to_str;
@@ -2913,7 +2923,7 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 
 			to_str = jspGetString(&elem, &to_len);
 
-			resStr = TextDatumGetCString(DirectFunctionCall3Coll(replace_text,
+			funcRes = TextDatumGetCString(DirectFunctionCall3Coll(replace_text,
 				C_COLLATION_OID,
 				CStringGetTextDatum(tmp),
 				CStringGetTextDatum(from_str),
@@ -2922,15 +2932,15 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 		}
 		case jpiStrSplitPartFunc:
 		{
-			char		*from_str;
+			char		*delim;
+			int			delim_len;
 			Numeric		n;
-			int			from_len;
 
 			jspGetArg0(jsp, &elem);
 			if (elem.type != jpiString)
 				elog(ERROR, "invalid jsonpath item type for .split_part()");
 
-			from_str = jspGetString(&elem, &from_len);
+			delim = jspGetString(&elem, &delim_len);
 
 			jspGetArg1(jsp, &elem);
 			if (elem.type != jpiNumeric)
@@ -2938,10 +2948,10 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 
 			n = jspGetNumeric(&elem);
 
-			resStr = TextDatumGetCString(DirectFunctionCall3Coll(split_part,
+			funcRes = TextDatumGetCString(DirectFunctionCall3Coll(split_part,
 				C_COLLATION_OID,
 				CStringGetTextDatum(tmp),
-				CStringGetTextDatum(from_str),
+				CStringGetTextDatum(delim),
 				DirectFunctionCall1(numeric_int8, NumericGetDatum(n))));
 			break;
 		}
@@ -2949,7 +2959,7 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 			elog(ERROR, "unsupported jsonpath item type: %d", jsp->type);
 	}
 
-	if (resStr)
+	if (funcRes)
 		res = jperOk;
 
 	hasNext = jspGetNext(jsp, &elem);
@@ -2959,7 +2969,7 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 
 	jb = hasNext ? &jbvbuf : palloc(sizeof(*jb));
 
-	/* Create the appropriate jb value to return */
+	/* Create the appropriate jb value to return, based on the PGFunction return type */
 	switch (jsp->type)
 	{
 		/* Cases for functions that return text */
@@ -2972,11 +2982,9 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 		case jpiStrInitcapFunc:
 		case jpiStrSplitPartFunc:
 			jb->type = jbvString;
-			jb->val.string.val = resStr;
+			jb->val.string.val = funcRes;
 			jb->val.string.len = strlen(jb->val.string.val);
-		default:
-			;
-			/* cant' happen */
+		default: ; /* cant' happen */
 	}
 
 	return executeNextItem(cxt, jsp, &elem, jb, found, hasNext);

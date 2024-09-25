@@ -43,8 +43,7 @@ static bool makeItemLikeRegex(JsonPathParseItem *expr,
 							  JsonPathString *flags,
 							  JsonPathParseItem ** result,
 							  struct Node *escontext);
-static JsonPathParseItem *makeItemReplaceFunc(JsonPathParseItem *arg0, JsonPathParseItem *arg1);
-static JsonPathParseItem *makeItemStrSplitPartFunc(JsonPathParseItem *arg0, JsonPathParseItem *arg1);
+static JsonPathParseItem *makeItemMethod2Args(JsonPathItemType type, JsonPathParseItem *arg0, JsonPathParseItem *arg1);
 
 
 /*
@@ -285,7 +284,7 @@ accessor_op:
 	| '.' STR_REPLACEFUNC_P '(' str_method_arg_list ')'
 		{
 			if (list_length($4) == 2)
-				$$ = makeItemReplaceFunc(linitial($4), lsecond($4));
+				$$ = makeItemMethod2Args(jpiReplaceFunc, linitial($4), lsecond($4));
 			else
 				ereturn(escontext, false,
 						(errcode(ERRCODE_SYNTAX_ERROR),
@@ -295,7 +294,7 @@ accessor_op:
 	| '.' STR_SPLIT_PART_P '(' str_method_arg_list ')'
 		{
 			if (list_length($4) == 2)
-				$$ = makeItemStrSplitPartFunc(linitial($4), lsecond($4));
+				$$ = makeItemMethod2Args(jpiStrSplitPartFunc, linitial($4), lsecond($4));
 			else
 				ereturn(escontext, false,
 						(errcode(ERRCODE_SYNTAX_ERROR),
@@ -353,7 +352,7 @@ str_method_arg_elem:
 	;
 
 str_method_arg_list:
-	str_method_arg_elem							{ $$ = list_make1($1); }
+	str_method_arg_elem								{ $$ = list_make1($1); }
 	| str_method_arg_list ',' str_method_arg_elem	{ $$ = lappend($1, $3); }
 	;
 key:
@@ -518,20 +517,9 @@ makeItemBinary(JsonPathItemType type, JsonPathParseItem *la, JsonPathParseItem *
 }
 
 static JsonPathParseItem *
-makeItemReplaceFunc(JsonPathParseItem *arg0, JsonPathParseItem *arg1)
+makeItemMethod2Args(JsonPathItemType type, JsonPathParseItem *arg0, JsonPathParseItem *arg1)
 {
-	JsonPathParseItem *v = makeItemType(jpiReplaceFunc);
-
-	v->value.method_args.arg0 = arg0;
-	v->value.method_args.arg1 = arg1;
-
-	return v;
-}
-
-static JsonPathParseItem *
-makeItemStrSplitPartFunc(JsonPathParseItem *arg0, JsonPathParseItem *arg1)
-{
-	JsonPathParseItem *v = makeItemType(jpiStrSplitPartFunc);
+	JsonPathParseItem *v = makeItemType(type);
 
 	v->value.method_args.arg0 = arg0;
 	v->value.method_args.arg1 = arg1;

@@ -330,11 +330,6 @@ flattenJsonPathParseItem(StringInfo buf, int *result, struct Node *escontext,
 		case jpiStrSplitPartFunc:
 		{
 			{
-				/*
-				 * First, reserve place for left/right arg's positions, then
-				 * record both args and sets actual position in reserved
-				 * places.
-				 */
 				int32		arg0 = reserveSpaceForItemPointer(buf);
 				int32		arg1 = reserveSpaceForItemPointer(buf);
 

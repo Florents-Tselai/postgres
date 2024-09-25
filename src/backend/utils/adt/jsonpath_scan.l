@@ -410,6 +410,7 @@ static const JsonPathKeyword keywords[] = {
 	{ 4, true,	TRUE_P,		"true"},
 	{ 4, false,	TYPE_P,		"type"},
 	{ 4, false,	WITH_P,		"with"},
+
 	{ 5, false, STR_BTRIM_P, "btrim"},
 	{ 5, true,	FALSE_P,	"false"},
 	{ 5, false,	FLOOR_P,	"floor"},
@@ -417,6 +418,7 @@ static const JsonPathKeyword keywords[] = {
 	{ 5, false, STR_LTRIM_P, "ltrim"},
 	{ 5, false, STR_RTRIM_P, "rtrim"},
 	{ 5, false, STR_UPPER_P, "upper"},
+
 	{ 6, false,	BIGINT_P,	"bigint"},
 	{ 6, false,	DOUBLE_P,	"double"},
 	{ 6, false,	EXISTS_P,	"exists"},
@@ -424,6 +426,7 @@ static const JsonPathKeyword keywords[] = {
 	{ 6, false,	STARTS_P,	"starts"},
 	{ 6, false,	STRICT_P,	"strict"},
 	{ 6, false,	STRINGFUNC_P, "string"},
+
 	{ 7, false,	BOOLEAN_P,	"boolean"},
 	{ 7, false,	CEILING_P,	"ceiling"},
 	{ 7, false,	DECIMAL_P,	"decimal"},
@@ -432,11 +435,15 @@ static const JsonPathKeyword keywords[] = {
 	{ 7, false, STR_REPLACEFUNC_P, "replace"},
 	{ 7, false,	TIME_TZ_P,	"time_tz"},
 	{ 7, false,	UNKNOWN_P,	"unknown"},
+
 	{ 8, false,	DATETIME_P,	"datetime"},
 	{ 8, false,	KEYVALUE_P,	"keyvalue"},
+
 	{ 9, false,	TIMESTAMP_P, "timestamp"},
-	{ 10,false, LIKE_REGEX_P, "like_regex"},
-	{ 10,false, STR_SPLIT_PART_P, "split_part"},
+
+	{ 10,false, LIKE_REGEX_P, 		"like_regex"},
+	{ 10,false, STR_SPLIT_PART_P, 	"split_part"},
+
 	{ 12,false, TIMESTAMP_TZ_P, "timestamp_tz"},
 };
 
