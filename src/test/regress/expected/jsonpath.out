@@ -483,6 +483,18 @@ select '$.rtrim("xyz")'::jsonpath;
  $.rtrim("xyz")
 (1 row)
 
+select '$.btrim()'::jsonpath;
+ jsonpath  
+-----------
+ $.btrim()
+(1 row)
+
+select '$.btrim("xyz")'::jsonpath;
+    jsonpath    
+----------------
+ $.btrim("xyz")
+(1 row)
+
 select '$.time()'::jsonpath;
  jsonpath 
 ----------

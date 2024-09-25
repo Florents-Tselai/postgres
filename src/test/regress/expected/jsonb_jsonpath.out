@@ -2769,6 +2769,31 @@ select jsonb_path_query('"   hello   "', '$.rtrim()');
  "   hello"
 (1 row)
 
+-- test .btrim()
+select jsonb_path_query('"   hello   "', '$.btrim(" ")');
+ jsonb_path_query 
+------------------
+ "hello"
+(1 row)
+
+select jsonb_path_query('"   hello   "', '$.btrim(" ")');
+ jsonb_path_query 
+------------------
+ "hello"
+(1 row)
+
+select jsonb_path_query('"   hello   "', '$.btrim()');
+ jsonb_path_query 
+------------------
+ "hello"
+(1 row)
+
+select jsonb_path_query('"   hello   "', '$.btrim()');
+ jsonb_path_query 
+------------------
+ "hello"
+(1 row)
+
 -- test .lower()
 select jsonb_path_query('null', '$.lower()');
 ERROR:  jsonpath item method .lower() can only be applied to a string
