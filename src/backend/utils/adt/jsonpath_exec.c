@@ -1662,9 +1662,12 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 			}
 			break;
 
+		case jpiStrLtrimFunc:
 		case jpiStrLowerFunc:
 		case jpiStrUpperFunc:
 		case jpiReplaceFunc:
+		case jpiStrRtrimFunc:
+		case jpiStrBtrimFunc:
 		{
 			if (unwrap && JsonbType(jb) == jbvArray)
 				return executeItemUnwrapTargetArray(cxt, jsp, jb, found, false);
@@ -2815,7 +2818,10 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 												JsonbValue *jb, JsonValueList *found) {
 	Assert(	jsp->type == jpiStrLowerFunc ||
 			jsp->type == jpiStrUpperFunc ||
-			jsp->type == jpiReplaceFunc
+			jsp->type == jpiReplaceFunc ||
+			jsp->type == jpiStrLtrimFunc ||
+			jsp->type == jpiStrRtrimFunc ||
+			jsp->type == jpiStrBtrimFunc
 			);
 	JsonbValue	jbvbuf;
 	bool		hasNext;
@@ -2837,6 +2843,47 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 	/* Internal string functions that accept no arguments */
 	switch (jsp->type)
 	{
+		case jpiStrLtrimFunc:
+		case jpiStrRtrimFunc:
+		case jpiStrBtrimFunc:
+		{
+			char	   *characters_str;
+			int			characters_len;
+			PGFunction	func = NULL;
+
+			switch (jsp->type)
+			{
+				case jpiStrLtrimFunc:
+					func = ltrim1;
+					break;
+				case jpiStrRtrimFunc:
+					func = rtrim1;
+					break;
+				case jpiStrBtrimFunc:
+					func = btrim1;
+					break;
+				default: ;
+			}
+
+			if (jsp->content.arg)
+			{
+				jspGetArg(jsp, &elem);
+				if (elem.type != jpiString)
+					elog(ERROR, "invalid jsonpath item type for .%s() argument", jspOperationName(jsp->type));
+
+				characters_str = jspGetString(&elem, &characters_len);
+				resStr = TextDatumGetCString(DirectFunctionCall2Coll(func,
+					DEFAULT_COLLATION_OID, str,
+					CStringGetTextDatum(characters_str)));
+				break;
+			}
+
+			resStr = TextDatumGetCString(DirectFunctionCall2Coll(func,
+					DEFAULT_COLLATION_OID, str,
+					CStringGetTextDatum(" ")));
+			break;
+		}
+
 		case jpiStrLowerFunc:
 			resStr = TextDatumGetCString(DirectFunctionCall1Coll(lower, DEFAULT_COLLATION_OID, str));
 			break;
@@ -2888,6 +2935,9 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 		case jpiStrLowerFunc:
 		case jpiStrUpperFunc:
 		case jpiReplaceFunc:
+		case jpiStrLtrimFunc:
+		case jpiStrRtrimFunc:
+		case jpiStrBtrimFunc:
 			jb->type = jbvString;
 			jb->val.string.val = resStr;
 			jb->val.string.len = strlen(jb->val.string.val);

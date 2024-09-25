@@ -393,6 +393,9 @@ flattenJsonPathParseItem(StringInfo buf, int *result, struct Node *escontext,
 		case jpiTimeTz:
 		case jpiTimestamp:
 		case jpiTimestampTz:
+		case jpiStrLtrimFunc:
+		case jpiStrRtrimFunc:
+		case jpiStrBtrimFunc:
 			{
 				int32		arg = reserveSpaceForItemPointer(buf);
 
@@ -885,6 +888,33 @@ printJsonPathItem(StringInfo buf, JsonPathItem *v, bool inKey,
 		case jpiStrUpperFunc:
 			appendStringInfoString(buf, ".upper()");
 			break;
+		case jpiStrLtrimFunc:
+			appendStringInfoString(buf, ".ltrim(");
+			if (v->content.arg)
+			{
+				jspGetArg(v, &elem);
+				printJsonPathItem(buf, &elem, false, false);
+			}
+			appendStringInfoChar(buf, ')');
+			break;
+		case jpiStrRtrimFunc:
+			appendStringInfoString(buf, ".rtrim(");
+			if (v->content.arg)
+			{
+				jspGetArg(v, &elem);
+				printJsonPathItem(buf, &elem, false, false);
+			}
+			appendStringInfoChar(buf, ')');
+			break;
+		case jpiStrBtrimFunc:
+			appendStringInfoString(buf, ".btrim(");
+			if (v->content.arg)
+			{
+				jspGetArg(v, &elem);
+				printJsonPathItem(buf, &elem, false, false);
+			}
+			appendStringInfoChar(buf, ')');
+			break;
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", v->type);
 	}
@@ -974,6 +1004,12 @@ jspOperationName(JsonPathItemType type)
 			return "timestamp";
 		case jpiTimestampTz:
 			return "timestamp_tz";
+		case jpiStrLtrimFunc:
+			return "ltrim";
+		case jpiStrRtrimFunc:
+			return "rtrim";
+		case jpiStrBtrimFunc:
+			return "btrim";
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", type);
 			return NULL;
@@ -1121,6 +1157,9 @@ jspInitByBuffer(JsonPathItem *v, char *base, int32 pos)
 		case jpiTimeTz:
 		case jpiTimestamp:
 		case jpiTimestampTz:
+		case jpiStrLtrimFunc:
+		case jpiStrRtrimFunc:
+		case jpiStrBtrimFunc:
 			read_int32(v->content.arg, base, pos);
 			break;
 		case jpiIndexArray:
@@ -1156,7 +1195,10 @@ jspGetArg(JsonPathItem *v, JsonPathItem *a)
 		   v->type == jpiTime ||
 		   v->type == jpiTimeTz ||
 		   v->type == jpiTimestamp ||
-		   v->type == jpiTimestampTz);
+		   v->type == jpiTimestampTz ||
+		   v->type == jpiStrLtrimFunc ||
+		   v->type == jpiStrRtrimFunc ||
+		   v->type == jpiStrBtrimFunc);
 
 	jspInitByBuffer(a, v->base, v->content.arg);
 }
@@ -1221,7 +1263,10 @@ jspGetNext(JsonPathItem *v, JsonPathItem *a)
 			   v->type == jpiTime ||
 			   v->type == jpiTimeTz ||
 			   v->type == jpiTimestamp ||
-			   v->type == jpiTimestampTz);
+			   v->type == jpiTimestampTz ||
+			   v->type == jpiStrLtrimFunc ||
+			   v->type == jpiStrRtrimFunc ||
+			   v->type == jpiStrBtrimFunc);
 
 		if (a)
 			jspInitByBuffer(a, v->base, v->nextPos);
@@ -1313,7 +1358,8 @@ jspGetString(JsonPathItem *v, int32 *len)
 {
 	Assert(v->type == jpiKey ||
 		   v->type == jpiString ||
-		   v->type == jpiVariable);
+		   v->type == jpiVariable ||
+		   v->type == jpiStringFunc);
 
 	if (len)
 		*len = v->content.value.datalen;
@@ -1590,6 +1636,9 @@ jspIsMutableWalker(JsonPathItem *jpi, struct JsonPathMutableContext *cxt)
 			case jpiReplaceFunc:
 			case jpiStrLowerFunc:
 			case jpiStrUpperFunc:
+			case jpiStrLtrimFunc:
+			case jpiStrRtrimFunc:
+			case jpiStrBtrimFunc:
 				status = jpdsNonDateTime;
 				break;
 

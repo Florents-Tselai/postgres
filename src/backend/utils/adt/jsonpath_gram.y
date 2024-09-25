@@ -85,7 +85,7 @@ static JsonPathParseItem *makeItemReplaceFunc(JsonPathParseItem *arg0, JsonPathP
 %token	<str>		DATETIME_P
 %token	<str>		BIGINT_P BOOLEAN_P DATE_P DECIMAL_P INTEGER_P NUMBER_P
 %token	<str>		STRINGFUNC_P TIME_P TIME_TZ_P TIMESTAMP_P TIMESTAMP_TZ_P
-%token	<str>		STR_REPLACEFUNC_P STR_LOWER_P STR_UPPER_P
+%token	<str>		STR_REPLACEFUNC_P STR_LOWER_P STR_UPPER_P STR_LTRIM_P STR_RTRIM_P STR_BTRIM_P
 
 %type	<result>	result
 
@@ -289,6 +289,12 @@ accessor_op:
 						 errmsg("invalid input syntax for type %s", "jsonpath"),
 						 errdetail(".replace() accepts two arguments.")));
 		}
+	| '.' STR_LTRIM_P '(' opt_datetime_template ')'
+    	{ $$ = makeItemUnary(jpiStrLtrimFunc, $4); }
+    | '.' STR_RTRIM_P '(' opt_datetime_template ')'
+        	{ $$ = makeItemUnary(jpiStrRtrimFunc, $4); }
+    | '.' STR_BTRIM_P '(' opt_datetime_template ')'
+            	{ $$ = makeItemUnary(jpiStrBtrimFunc, $4); }
 	;
 
 csv_elem:
@@ -376,6 +382,9 @@ key_name:
 	| TIME_TZ_P
 	| TIMESTAMP_P
 	| TIMESTAMP_TZ_P
+	| STR_LTRIM_P
+	| STR_RTRIM_P
+	| STR_BTRIM_P
 	;
 
 method:

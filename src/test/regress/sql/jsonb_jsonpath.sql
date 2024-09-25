@@ -619,6 +619,40 @@ select jsonb_path_query('"2023-08-15 12:34:56 +5:30"', '$.timestamp_tz().string(
 select jsonb_path_query('"2023-08-15 12:34:56"', '$.timestamp().string()');
 rollback;
 
+-- test .ltrim()
+select jsonb_path_query('"   hello   "', '$.ltrim(" ")');
+select jsonb_path_query('"   hello   "', '$.ltrim(" ")');
+select jsonb_path_query('"   hello   "', '$.ltrim()');
+select jsonb_path_query('"   hello   "', '$.ltrim()');
+select jsonb_path_query('null', '$.ltrim()');
+select jsonb_path_query('null', '$.ltrim()', silent => true);
+select jsonb_path_query('[]', '$.ltrim()');
+select jsonb_path_query('[]', 'strict $.ltrim()');
+select jsonb_path_query('{}', '$.ltrim()');
+select jsonb_path_query('[]', 'strict $.ltrim()', silent => true);
+select jsonb_path_query('{}', '$.ltrim()', silent => true);
+select jsonb_path_query('1.23', '$.ltrim()');
+select jsonb_path_query('"1.23"', '$.ltrim()');
+select jsonb_path_query('"1.23aaa"', '$.ltrim()');
+select jsonb_path_query('1234', '$.ltrim()');
+select jsonb_path_query('true', '$.ltrim()');
+select jsonb_path_query('1234', '$.ltrim().type()');
+select jsonb_path_query('[2, true]', '$.ltrim()');
+select jsonb_path_query_array('["  maybe  ", "  yes", "  no"]', '$[*].ltrim()');
+select jsonb_path_query_array('["  maybe  ", "  yes", "  no"]', '$[*].ltrim().type()');
+
+-- test .rtrim()
+select jsonb_path_query('"   hello   "', '$.rtrim(" ")');
+select jsonb_path_query('"   hello   "', '$.rtrim(" ")');
+select jsonb_path_query('"   hello   "', '$.rtrim()');
+select jsonb_path_query('"   hello   "', '$.rtrim()');
+
+-- test .btrim()
+select jsonb_path_query('"   hello   "', '$.btrim(" ")');
+select jsonb_path_query('"   hello   "', '$.btrim(" ")');
+select jsonb_path_query('"   hello   "', '$.btrim()');
+select jsonb_path_query('"   hello   "', '$.btrim()');
+
 -- test .lower()
 select jsonb_path_query('null', '$.lower()');
 select jsonb_path_query('null', '$.lower()', silent => true);
@@ -671,7 +705,7 @@ select jsonb_path_query('"hello world"', '$.replace("hello","bye").upper()');
 select jsonb_path_query('"hElLo WorlD"', '$.lower().upper().lower().replace("hello","bye")');
 select jsonb_path_query('"hElLo WorlD"', '$.upper().lower().upper().replace("HELLO", "BYE")');
 select jsonb_path_query('"hElLo WorlD"', '$.lower().upper().lower().replace("hello","bye") starts with "bye"');
-
+select jsonb_path_query('"   hElLo WorlD "', '$.btrim().lower().upper().lower().replace("hello","bye") starts with "bye"');
 
 -- Test .time()
 select jsonb_path_query('null', '$.time()');
