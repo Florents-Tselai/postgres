@@ -327,8 +327,7 @@ flattenJsonPathParseItem(StringInfo buf, int *result, struct Node *escontext,
 			}
 			break;
 		case jpiReplaceFunc:
-		case jpiStrLeftFunc:
-		case jpiStrRightFunc:
+		case jpiStrSplitPartFunc:
 		{
 			{
 				/*
@@ -885,23 +884,8 @@ printJsonPathItem(StringInfo buf, JsonPathItem *v, bool inKey,
 			}
 			appendStringInfoChar(buf, ')');
 			break;
-		case jpiStrLeftFunc:
-			appendStringInfoString(buf, ".left(");
-			if (v->content.method_args.arg0)
-			{
-				jspGetArg0(v, &elem);
-				printJsonPathItem(buf, &elem, false, false);
-			}
-			if (v->content.method_args.arg1)
-			{
-				appendStringInfoChar(buf, ',');
-				jspGetArg1(v, &elem);
-				printJsonPathItem(buf, &elem, false, false);
-			}
-			appendStringInfoChar(buf, ')');
-			break;
-		case jpiStrRightFunc:
-			appendStringInfoString(buf, ".right(");
+		case jpiStrSplitPartFunc:
+			appendStringInfoString(buf, ".split_part(");
 			if (v->content.method_args.arg0)
 			{
 				jspGetArg0(v, &elem);
@@ -1048,10 +1032,8 @@ jspOperationName(JsonPathItemType type)
 			return "btrim";
 		case jpiStrInitcapFunc:
 			return "initcap";
-		case jpiStrLeftFunc:
-			return "left";
-		case jpiStrRightFunc:
-			return "right";
+		case jpiStrSplitPartFunc:
+			return "split_part";
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", type);
 			return NULL;
@@ -1186,8 +1168,7 @@ jspInitByBuffer(JsonPathItem *v, char *base, int32 pos)
 			read_int32(v->content.args.right, base, pos);
 			break;
 		case jpiReplaceFunc:
-		case jpiStrLeftFunc:
-		case jpiStrRightFunc:
+		case jpiStrSplitPartFunc:
 			read_int32(v->content.method_args.arg0, base, pos);
 			read_int32(v->content.method_args.arg1, base, pos);
 		break;
@@ -1313,8 +1294,7 @@ jspGetNext(JsonPathItem *v, JsonPathItem *a)
 			   v->type == jpiStrRtrimFunc ||
 			   v->type == jpiStrBtrimFunc ||
 			   v->type == jpiStrInitcapFunc ||
-			   v->type == jpiStrLeftFunc ||
-			   v->type == jpiStrRightFunc);
+			   v->type == jpiStrSplitPartFunc);
 
 		if (a)
 			jspInitByBuffer(a, v->base, v->nextPos);
@@ -1350,8 +1330,7 @@ void
 jspGetArg0(JsonPathItem *v, JsonPathItem *a)
 {
 	Assert(v->type == jpiReplaceFunc ||
-			v->type == jpiStrLeftFunc ||
-			v->type == jpiStrRightFunc);
+			v->type == jpiStrSplitPartFunc);
 
 	jspInitByBuffer(a, v->base, v->content.method_args.arg0);
 }
@@ -1360,8 +1339,7 @@ void
 jspGetArg1(JsonPathItem *v, JsonPathItem *a)
 {
 	Assert(v->type == jpiReplaceFunc ||
-			v->type == jpiStrLeftFunc ||
-			v->type == jpiStrRightFunc);
+			v->type == jpiStrSplitPartFunc);
 
 	jspInitByBuffer(a, v->base, v->content.method_args.arg1);
 }
@@ -1692,8 +1670,7 @@ jspIsMutableWalker(JsonPathItem *jpi, struct JsonPathMutableContext *cxt)
 			case jpiStrRtrimFunc:
 			case jpiStrBtrimFunc:
 			case jpiStrInitcapFunc:
-			case jpiStrLeftFunc:
-			case jpiStrRightFunc:
+			case jpiStrSplitPartFunc:
 				status = jpdsNonDateTime;
 				break;
 

@@ -404,7 +404,6 @@ static const JsonPathKeyword keywords[] = {
 	{ 4, false,	DATE_P,		"date"},
 	{ 4, false,	FLAG_P,		"flag"},
 	{ 4, false,	LAST_P,		"last"},
-	{ 4, false,	STR_LEFT_P,		"left"},
 	{ 4, true,	NULL_P,		"null"},
 	{ 4, false,	SIZE_P,		"size"},
 	{ 4, false,	TIME_P,		"time"},
@@ -416,7 +415,6 @@ static const JsonPathKeyword keywords[] = {
 	{ 5, false,	FLOOR_P,	"floor"},
 	{ 5, false, STR_LOWER_P, "lower"},
 	{ 5, false, STR_LTRIM_P, "ltrim"},
-	{ 5, false, STR_RIGHT_P, "right"},
 	{ 5, false, STR_RTRIM_P, "rtrim"},
 	{ 5, false, STR_UPPER_P, "upper"},
 	{ 6, false,	BIGINT_P,	"bigint"},
@@ -438,6 +436,7 @@ static const JsonPathKeyword keywords[] = {
 	{ 8, false,	KEYVALUE_P,	"keyvalue"},
 	{ 9, false,	TIMESTAMP_P, "timestamp"},
 	{ 10,false, LIKE_REGEX_P, "like_regex"},
+	{ 10,false, STR_SPLIT_PART_P, "split_part"},
 	{ 12,false, TIMESTAMP_TZ_P, "timestamp_tz"},
 };
 
