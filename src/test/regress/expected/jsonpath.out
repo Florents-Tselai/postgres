@@ -501,6 +501,12 @@ select '$.initcap()'::jsonpath;
  $.initcap()
 (1 row)
 
+select '$.split_part("~@~", 2)'::jsonpath;
+       jsonpath        
+-----------------------
+ $.split_part("~@~",2)
+(1 row)
+
 select '$.time()'::jsonpath;
  jsonpath 
 ----------

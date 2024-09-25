@@ -1669,6 +1669,7 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 		case jpiStrRtrimFunc:
 		case jpiStrBtrimFunc:
 		case jpiStrInitcapFunc:
+		case jpiStrSplitPartFunc:
 		{
 			if (unwrap && JsonbType(jb) == jbvArray)
 				return executeItemUnwrapTargetArray(cxt, jsp, jb, found, false);
@@ -2823,7 +2824,8 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 			jsp->type == jpiStrLtrimFunc ||
 			jsp->type == jpiStrRtrimFunc ||
 			jsp->type == jpiStrBtrimFunc ||
-			jsp->type == jpiStrInitcapFunc);
+			jsp->type == jpiStrInitcapFunc ||
+			jsp->type == jpiStrSplitPartFunc);
 	JsonbValue	jbvbuf;
 	bool		hasNext;
 	JsonPathExecResult res = jperNotFound;
@@ -2918,6 +2920,31 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 				CStringGetTextDatum(to_str)));
 			break;
 		}
+		case jpiStrSplitPartFunc:
+		{
+			char		*from_str;
+			Numeric		n;
+			int			from_len;
+
+			jspGetArg0(jsp, &elem);
+			if (elem.type != jpiString)
+				elog(ERROR, "invalid jsonpath item type for .split_part()");
+
+			from_str = jspGetString(&elem, &from_len);
+
+			jspGetArg1(jsp, &elem);
+			if (elem.type != jpiNumeric)
+				elog(ERROR, "invalid jsonpath item type for .split_part()");
+
+			n = jspGetNumeric(&elem);
+
+			resStr = TextDatumGetCString(DirectFunctionCall3Coll(split_part,
+				C_COLLATION_OID,
+				CStringGetTextDatum(tmp),
+				CStringGetTextDatum(from_str),
+				DirectFunctionCall1(numeric_int8, NumericGetDatum(n))));
+			break;
+		}
 		default:
 			elog(ERROR, "unsupported jsonpath item type: %d", jsp->type);
 	}
@@ -2943,6 +2970,7 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 		case jpiStrRtrimFunc:
 		case jpiStrBtrimFunc:
 		case jpiStrInitcapFunc:
+		case jpiStrSplitPartFunc:
 			jb->type = jbvString;
 			jb->val.string.val = resStr;
 			jb->val.string.len = strlen(jb->val.string.val);

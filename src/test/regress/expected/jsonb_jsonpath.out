@@ -3074,6 +3074,13 @@ select jsonb_path_query('"hello world"', '$.replace("hello","bye") starts with "
  true
 (1 row)
 
+-- Test .split_part()
+select jsonb_path_query('"abc~@~def~@~ghi"', '$.split_part("~@~", 2)');
+ jsonb_path_query 
+------------------
+ "def"
+(1 row)
+
 -- Test string methods play nicely together
 select jsonb_path_query('"hello world"', '$.replace("hello","bye").upper()');
  jsonb_path_query 
