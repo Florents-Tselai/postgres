@@ -2844,72 +2844,41 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 	switch (jsp->type)
 	{
 		case jpiStrLtrimFunc:
-		{
-			char	   *characters_str;
-			int			characters_len;
-
-			if (jsp->content.arg)
-			{
-				jspGetArg(jsp, &elem);
-				if (elem.type != jpiString)
-					elog(ERROR, "invalid jsonpath item type for .ltrim() argument");
-
-				characters_str = jspGetString(&elem, &characters_len);
-				resStr = TextDatumGetCString(DirectFunctionCall2Coll(ltrim1,
-					DEFAULT_COLLATION_OID, str,
-					CStringGetTextDatum(characters_str)));
-				break;
-			}
-
-			resStr = TextDatumGetCString(DirectFunctionCall2Coll(ltrim1,
-					DEFAULT_COLLATION_OID, str,
-					CStringGetTextDatum(" ")));
-			break;
-		}
-
 		case jpiStrRtrimFunc:
-		{
-			char	   *characters_str;
-			int			characters_len;
-
-			if (jsp->content.arg)
-			{
-				jspGetArg(jsp, &elem);
-				if (elem.type != jpiString)
-					elog(ERROR, "invalid jsonpath item type for .rtrim() argument");
-
-				characters_str = jspGetString(&elem, &characters_len);
-				resStr = TextDatumGetCString(DirectFunctionCall2Coll(rtrim1,
-					DEFAULT_COLLATION_OID, str,
-					CStringGetTextDatum(characters_str)));
-				break;
-			}
-
-			resStr = TextDatumGetCString(DirectFunctionCall2Coll(rtrim1,
-					DEFAULT_COLLATION_OID, str,
-					CStringGetTextDatum(" ")));
-			break;
-		}
-
 		case jpiStrBtrimFunc:
 		{
 			char	   *characters_str;
 			int			characters_len;
+			PGFunction	func = NULL;
+
+			switch (jsp->type)
+			{
+				case jpiStrLtrimFunc:
+					func = ltrim1;
+					break;
+				case jpiStrRtrimFunc:
+					func = rtrim1;
+					break;
+				case jpiStrBtrimFunc:
+					func = btrim1;
+					break;
+				default: ;
+			}
 
 			if (jsp->content.arg)
 			{
 				jspGetArg(jsp, &elem);
 				if (elem.type != jpiString)
-					elog(ERROR, "invalid jsonpath item type for .rtrim() argument");
+					elog(ERROR, "invalid jsonpath item type for .%s() argument", jspOperationName(jsp->type));
 
 				characters_str = jspGetString(&elem, &characters_len);
-				resStr = TextDatumGetCString(DirectFunctionCall2Coll(btrim1,
+				resStr = TextDatumGetCString(DirectFunctionCall2Coll(func,
 					DEFAULT_COLLATION_OID, str,
 					CStringGetTextDatum(characters_str)));
 				break;
 			}
 
-			resStr = TextDatumGetCString(DirectFunctionCall2Coll(btrim1,
+			resStr = TextDatumGetCString(DirectFunctionCall2Coll(func,
 					DEFAULT_COLLATION_OID, str,
 					CStringGetTextDatum(" ")));
 			break;
