@@ -459,6 +459,18 @@ select '$.lower().upper().lower().replace("hello","bye")'::jsonpath;
  $.lower().upper().lower().replace("hello","bye")
 (1 row)
 
+select '$.ltrim()'::jsonpath;
+ jsonpath  
+-----------
+ $.ltrim()
+(1 row)
+
+select '$.ltrim("xyz")'::jsonpath;
+    jsonpath    
+----------------
+ $.ltrim("xyz")
+(1 row)
+
 select '$.time()'::jsonpath;
  jsonpath 
 ----------
