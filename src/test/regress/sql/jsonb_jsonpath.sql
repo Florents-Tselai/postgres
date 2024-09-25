@@ -689,6 +689,23 @@ select jsonb_path_query('[2, true]', '$.upper()');
 select jsonb_path_query_array('["maybe", "yes", "no"]', '$[*].upper()');
 select jsonb_path_query_array('["maybe", "yes", "no"]', '$[*].upper().type()');
 
+-- test .initcap()
+select jsonb_path_query('null', '$.initcap()');
+select jsonb_path_query('null', '$.initcap()', silent => true);
+select jsonb_path_query('[]', '$.initcap()');
+select jsonb_path_query('[]', 'strict $.initcap()');
+select jsonb_path_query('{}', '$.initcap()');
+select jsonb_path_query('[]', 'strict $.initcap()', silent => true);
+select jsonb_path_query('{}', '$.initcap()', silent => true);
+select jsonb_path_query('1.23', '$.initcap()');
+select jsonb_path_query('"1.23"', '$.initcap()');
+select jsonb_path_query('"1.23aaa"', '$.initcap()');
+select jsonb_path_query('1234', '$.initcap()');
+select jsonb_path_query('true', '$.initcap()');
+select jsonb_path_query('1234', '$.initcap().type()');
+select jsonb_path_query('[2, true]', '$.initcap()');
+select jsonb_path_query('["maybe yes", "probably no"]', '$.initcap()');
+
 -- Test .replace()
 select jsonb_path_query('null', '$.replace("x", "bye")');
 select jsonb_path_query('null', '$.replace("x", "bye")', silent => true);

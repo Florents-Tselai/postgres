@@ -1668,6 +1668,7 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 		case jpiReplaceFunc:
 		case jpiStrRtrimFunc:
 		case jpiStrBtrimFunc:
+		case jpiStrInitcapFunc:
 		{
 			if (unwrap && JsonbType(jb) == jbvArray)
 				return executeItemUnwrapTargetArray(cxt, jsp, jb, found, false);
@@ -2821,8 +2822,8 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 			jsp->type == jpiReplaceFunc ||
 			jsp->type == jpiStrLtrimFunc ||
 			jsp->type == jpiStrRtrimFunc ||
-			jsp->type == jpiStrBtrimFunc
-			);
+			jsp->type == jpiStrBtrimFunc ||
+			jsp->type == jpiStrInitcapFunc);
 	JsonbValue	jbvbuf;
 	bool		hasNext;
 	JsonPathExecResult res = jperNotFound;
@@ -2890,6 +2891,9 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 		case jpiStrUpperFunc:
 			resStr = TextDatumGetCString(DirectFunctionCall1Coll(upper, DEFAULT_COLLATION_OID, str));
 			break;
+		case jpiStrInitcapFunc:
+			resStr = TextDatumGetCString(DirectFunctionCall1Coll(initcap, DEFAULT_COLLATION_OID, str));
+			break;
 		case jpiReplaceFunc:
 		{
 			char		*from_str, *to_str;
@@ -2938,6 +2942,7 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 		case jpiStrLtrimFunc:
 		case jpiStrRtrimFunc:
 		case jpiStrBtrimFunc:
+		case jpiStrInitcapFunc:
 			jb->type = jbvString;
 			jb->val.string.val = resStr;
 			jb->val.string.len = strlen(jb->val.string.val);

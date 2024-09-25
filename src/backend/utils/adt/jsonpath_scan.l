@@ -427,6 +427,7 @@ static const JsonPathKeyword keywords[] = {
 	{ 7, false,	BOOLEAN_P,	"boolean"},
 	{ 7, false,	CEILING_P,	"ceiling"},
 	{ 7, false,	DECIMAL_P,	"decimal"},
+	{ 7, false, STR_INITCAP_P, "initcap"},
 	{ 7, false,	INTEGER_P,	"integer"},
 	{ 7, false, STR_REPLACEFUNC_P, "replace"},
 	{ 7, false,	TIME_TZ_P,	"time_tz"},

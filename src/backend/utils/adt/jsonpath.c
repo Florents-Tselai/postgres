@@ -493,6 +493,7 @@ flattenJsonPathParseItem(StringInfo buf, int *result, struct Node *escontext,
 		case jpiStringFunc:
 		case jpiStrLowerFunc:
 		case jpiStrUpperFunc:
+		case jpiStrInitcapFunc:
 			break;
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", item->type);
@@ -888,6 +889,9 @@ printJsonPathItem(StringInfo buf, JsonPathItem *v, bool inKey,
 		case jpiStrUpperFunc:
 			appendStringInfoString(buf, ".upper()");
 			break;
+		case jpiStrInitcapFunc:
+			appendStringInfoString(buf, ".initcap()");
+			break;
 		case jpiStrLtrimFunc:
 			appendStringInfoString(buf, ".ltrim(");
 			if (v->content.arg)
@@ -1010,6 +1014,8 @@ jspOperationName(JsonPathItemType type)
 			return "rtrim";
 		case jpiStrBtrimFunc:
 			return "btrim";
+		case jpiStrInitcapFunc:
+			return "initcap";
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", type);
 			return NULL;
@@ -1114,6 +1120,7 @@ jspInitByBuffer(JsonPathItem *v, char *base, int32 pos)
 		case jpiStringFunc:
 		case jpiStrLowerFunc:
 		case jpiStrUpperFunc:
+		case jpiStrInitcapFunc:
 			break;
 		case jpiString:
 		case jpiKey:
@@ -1266,7 +1273,8 @@ jspGetNext(JsonPathItem *v, JsonPathItem *a)
 			   v->type == jpiTimestampTz ||
 			   v->type == jpiStrLtrimFunc ||
 			   v->type == jpiStrRtrimFunc ||
-			   v->type == jpiStrBtrimFunc);
+			   v->type == jpiStrBtrimFunc ||
+			   v->type == jpiStrInitcapFunc);
 
 		if (a)
 			jspInitByBuffer(a, v->base, v->nextPos);
@@ -1639,6 +1647,7 @@ jspIsMutableWalker(JsonPathItem *jpi, struct JsonPathMutableContext *cxt)
 			case jpiStrLtrimFunc:
 			case jpiStrRtrimFunc:
 			case jpiStrBtrimFunc:
+			case jpiStrInitcapFunc:
 				status = jpdsNonDateTime;
 				break;
 
