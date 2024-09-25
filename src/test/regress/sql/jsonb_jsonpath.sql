@@ -620,10 +620,16 @@ select jsonb_path_query('"2023-08-15 12:34:56"', '$.timestamp().string()');
 rollback;
 
 -- test .ltrim()
-select jsonb_path_query('"   hello"', '$.ltrim(" ")');
-select jsonb_path_query('"hello   "', '$.ltrim(" ")');
-select jsonb_path_query('"   hello"', '$.ltrim()');
-select jsonb_path_query('"hello   "', '$.ltrim()');
+select jsonb_path_query('"   hello   "', '$.ltrim(" ")');
+select jsonb_path_query('"   hello   "', '$.ltrim(" ")');
+select jsonb_path_query('"   hello   "', '$.ltrim()');
+select jsonb_path_query('"   hello   "', '$.ltrim()');
+
+-- test .rtrim()
+select jsonb_path_query('"   hello   "', '$.rtrim(" ")');
+select jsonb_path_query('"   hello   "', '$.rtrim(" ")');
+select jsonb_path_query('"   hello   "', '$.rtrim()');
+select jsonb_path_query('"   hello   "', '$.rtrim()');
 
 -- test .lower()
 select jsonb_path_query('null', '$.lower()');

@@ -394,6 +394,7 @@ flattenJsonPathParseItem(StringInfo buf, int *result, struct Node *escontext,
 		case jpiTimestamp:
 		case jpiTimestampTz:
 		case jpiStrLtrimFunc:
+		case jpiStrRtrimFunc:
 			{
 				int32		arg = reserveSpaceForItemPointer(buf);
 
@@ -895,6 +896,15 @@ printJsonPathItem(StringInfo buf, JsonPathItem *v, bool inKey,
 			}
 			appendStringInfoChar(buf, ')');
 			break;
+		case jpiStrRtrimFunc:
+			appendStringInfoString(buf, ".rtrim(");
+			if (v->content.arg)
+			{
+				jspGetArg(v, &elem);
+				printJsonPathItem(buf, &elem, false, false);
+			}
+			appendStringInfoChar(buf, ')');
+			break;
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", v->type);
 	}
@@ -986,6 +996,8 @@ jspOperationName(JsonPathItemType type)
 			return "timestamp_tz";
 		case jpiStrLtrimFunc:
 			return "ltrim";
+		case jpiStrRtrimFunc:
+			return "rtrim";
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", type);
 			return NULL;
@@ -1134,6 +1146,7 @@ jspInitByBuffer(JsonPathItem *v, char *base, int32 pos)
 		case jpiTimestamp:
 		case jpiTimestampTz:
 		case jpiStrLtrimFunc:
+		case jpiStrRtrimFunc:
 			read_int32(v->content.arg, base, pos);
 			break;
 		case jpiIndexArray:
@@ -1170,7 +1183,8 @@ jspGetArg(JsonPathItem *v, JsonPathItem *a)
 		   v->type == jpiTimeTz ||
 		   v->type == jpiTimestamp ||
 		   v->type == jpiTimestampTz ||
-		   v->type == jpiStrLtrimFunc);
+		   v->type == jpiStrLtrimFunc ||
+		   v->type == jpiStrRtrimFunc);
 
 	jspInitByBuffer(a, v->base, v->content.arg);
 }
@@ -1236,7 +1250,8 @@ jspGetNext(JsonPathItem *v, JsonPathItem *a)
 			   v->type == jpiTimeTz ||
 			   v->type == jpiTimestamp ||
 			   v->type == jpiTimestampTz ||
-			   v->type == jpiStrLtrimFunc);
+			   v->type == jpiStrLtrimFunc ||
+			   v->type == jpiStrRtrimFunc);
 
 		if (a)
 			jspInitByBuffer(a, v->base, v->nextPos);
@@ -1607,6 +1622,7 @@ jspIsMutableWalker(JsonPathItem *jpi, struct JsonPathMutableContext *cxt)
 			case jpiStrLowerFunc:
 			case jpiStrUpperFunc:
 			case jpiStrLtrimFunc:
+			case jpiStrRtrimFunc:
 				status = jpdsNonDateTime;
 				break;
 

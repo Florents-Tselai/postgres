@@ -84,6 +84,8 @@ select '$.upper()'::jsonpath;
 select '$.lower().upper().lower().replace("hello","bye")'::jsonpath;
 select '$.ltrim()'::jsonpath;
 select '$.ltrim("xyz")'::jsonpath;
+select '$.rtrim()'::jsonpath;
+select '$.rtrim("xyz")'::jsonpath;
 select '$.time()'::jsonpath;
 select '$.time(6)'::jsonpath;
 select '$.time_tz()'::jsonpath;

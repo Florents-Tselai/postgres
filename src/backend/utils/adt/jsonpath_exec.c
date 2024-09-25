@@ -1666,6 +1666,7 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 		case jpiStrLowerFunc:
 		case jpiStrUpperFunc:
 		case jpiReplaceFunc:
+		case jpiStrRtrimFunc:
 		{
 			if (unwrap && JsonbType(jb) == jbvArray)
 				return executeItemUnwrapTargetArray(cxt, jsp, jb, found, false);
@@ -2817,7 +2818,8 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 	Assert(	jsp->type == jpiStrLowerFunc ||
 			jsp->type == jpiStrUpperFunc ||
 			jsp->type == jpiReplaceFunc ||
-			jsp->type == jpiStrLtrimFunc
+			jsp->type == jpiStrLtrimFunc ||
+			jsp->type == jpiStrRtrimFunc
 			);
 	JsonbValue	jbvbuf;
 	bool		hasNext;
@@ -2858,6 +2860,30 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 			}
 
 			resStr = TextDatumGetCString(DirectFunctionCall2Coll(ltrim1,
+					DEFAULT_COLLATION_OID, str,
+					CStringGetTextDatum(" ")));
+			break;
+		}
+
+		case jpiStrRtrimFunc:
+		{
+			char	   *characters_str;
+			int			characters_len;
+
+			if (jsp->content.arg)
+			{
+				jspGetArg(jsp, &elem);
+				if (elem.type != jpiString)
+					elog(ERROR, "invalid jsonpath item type for .rtrim() argument");
+
+				characters_str = jspGetString(&elem, &characters_len);
+				resStr = TextDatumGetCString(DirectFunctionCall2Coll(rtrim1,
+					DEFAULT_COLLATION_OID, str,
+					CStringGetTextDatum(characters_str)));
+				break;
+			}
+
+			resStr = TextDatumGetCString(DirectFunctionCall2Coll(rtrim1,
 					DEFAULT_COLLATION_OID, str,
 					CStringGetTextDatum(" ")));
 			break;
@@ -2915,6 +2941,7 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 		case jpiStrUpperFunc:
 		case jpiReplaceFunc:
 		case jpiStrLtrimFunc:
+		case jpiStrRtrimFunc:
 			jb->type = jbvString;
 			jb->val.string.val = resStr;
 			jb->val.string.len = strlen(jb->val.string.val);
