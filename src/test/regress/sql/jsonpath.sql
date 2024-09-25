@@ -89,6 +89,9 @@ select '$.rtrim("xyz")'::jsonpath;
 select '$.btrim()'::jsonpath;
 select '$.btrim("xyz")'::jsonpath;
 select '$.initcap()'::jsonpath;
+select '$.left("abcde", 2)'::jsonpath;
+select '$.right("abcde", 2)'::jsonpath;
+
 select '$.time()'::jsonpath;
 select '$.time(6)'::jsonpath;
 select '$.time_tz()'::jsonpath;

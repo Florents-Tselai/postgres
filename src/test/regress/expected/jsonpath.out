@@ -501,6 +501,18 @@ select '$.initcap()'::jsonpath;
  $.initcap()
 (1 row)
 
+select '$.left("abcde", 2)'::jsonpath;
+     jsonpath      
+-------------------
+ $.left("abcde",2)
+(1 row)
+
+select '$.right("abcde", 2)'::jsonpath;
+      jsonpath      
+--------------------
+ $.right("abcde",2)
+(1 row)
+
 select '$.time()'::jsonpath;
  jsonpath 
 ----------
