@@ -96,7 +96,11 @@ static JsonPathParseItem *makeItemStrSplitPartFunc(JsonPathParseItem *arg0, Json
 					any_path accessor_op key predicate delimited_predicate
 					index_elem starts_with_initial expr_or_predicate
 					datetime_template opt_datetime_template csv_elem
+<<<<<<< Updated upstream
 					datetime_precision opt_datetime_precision 
+=======
+					datetime_precision opt_datetime_precision
+>>>>>>> Stashed changes
 					str_method_arg_elem
 
 %type	<elems>		accessor_expr csv_list opt_csv_list str_method_arg_list
@@ -305,9 +309,9 @@ accessor_op:
 	| '.' STR_LTRIM_P '(' opt_datetime_template ')'
     	{ $$ = makeItemUnary(jpiStrLtrimFunc, $4); }
     | '.' STR_RTRIM_P '(' opt_datetime_template ')'
-        	{ $$ = makeItemUnary(jpiStrRtrimFunc, $4); }
+    	{ $$ = makeItemUnary(jpiStrRtrimFunc, $4); }
     | '.' STR_BTRIM_P '(' opt_datetime_template ')'
-            	{ $$ = makeItemUnary(jpiStrBtrimFunc, $4); }
+    	{ $$ = makeItemUnary(jpiStrBtrimFunc, $4); }
 	;
 
 csv_elem:
