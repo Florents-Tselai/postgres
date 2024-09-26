@@ -51,6 +51,3 @@ jobs:
       - name: 'make check-world'
         run: |
           make check-world
-
-
-
