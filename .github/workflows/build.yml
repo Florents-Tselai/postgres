@@ -41,8 +41,10 @@ jobs:
       - name: 'configure'
         run: |
           ./configure \
-            --prefix=/usr/local \
-            --enable-cassert --enable-injection-points --enable-debug
+          --prefix=/usr/local \
+          --enable-cassert \
+          --enable-injection-points \
+          --enable-debug
 
       - name: 'make world-bin-contrib-recurse -j'
         run: |
