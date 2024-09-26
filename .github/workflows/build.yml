@@ -1,0 +1,55 @@
+name: build
+
+on:
+  push:
+    branches:
+      - 'spquery-*'
+      - 'sp-*'
+  pull_request:
+    branches:
+      - 'spquery-*'
+      - 'sp-*'
+jobs:
+  ubuntu:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+          build-essential \
+          libreadline-dev \
+          zlib1g-dev \
+          flex \
+          bison \
+          libxml2-dev \
+          libxslt1-dev \
+          libssl-dev \
+          libkrb5-dev \
+          libpam0g-dev \
+          libldap2-dev \
+          libedit-dev \
+          wget \
+          libcurl4-gnutls-dev \
+          curl
+
+      - name: 'configure'
+        run: |
+          ./configure \
+          --prefix=/usr/local \
+          --enable-cassert \
+          --enable-injection-points \
+          --enable-debug
+
+      - name: 'make world-bin-contrib-recurse -j'
+        run: |
+          make world-bin-contrib-recurse -j
+
+      - name: 'make check-world'
+        run: |
+          make check-world
