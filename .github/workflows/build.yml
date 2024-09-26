@@ -44,13 +44,13 @@ jobs:
             --prefix=/usr/local \
             --enable-cassert --enable-injection-points --enable-debug
 
-      - name: 'make all -j'
+      - name: 'make world-bin-contrib-recurse -j'
         run: |
-          make all -j
+          make world-bin-contrib-recurse -j
 
-      - name: 'make check'
+      - name: 'make check-world'
         run: |
-          make check
+          make check-world
 
 
 
