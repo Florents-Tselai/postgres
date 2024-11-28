@@ -1658,6 +1658,70 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 			}
 			break;
 
+		case jpiReplaceFunc:
+			{
+				JsonbValue	jbv;
+				char		*replacedTxt;
+				char		*txt = NULL;
+
+				if (unwrap && JsonbType(jb) == jbvArray)
+					return executeItemUnwrapTargetArray(cxt, jsp, jb, found,false);
+
+				if (jb->type == jbvString) {
+					/* Value is not necessarily null-terminated, so we do pnstrdup() here. */
+					txt = pnstrdup(jb->val.string.val, jb->val.string.len);
+
+					res = jperOk;
+				}
+
+				if (res == jperNotFound) {
+					/* TODO: probably need ERRCODE for that? */
+					RETURN_ERROR(ereport(ERROR,
+										 (errcode(ERRCODE_INVALID_ARGUMENT_FOR_SQL_JSON_DATETIME_FUNCTION),
+										  errmsg("jsonpath item method .%s() can only be applied to a string",
+												 jspOperationName(jsp->type)))));
+				}
+				if (jsp->content.args.left && jsp->content.args.right)
+				{
+					char		*from_str, *to_str;
+					int			from_len, to_len;
+
+					jspGetLeftArg(jsp, &elem);
+					if (elem.type != jpiString)
+						elog(ERROR, "invalid jsonpath item type for .replace() from");
+
+					from_str = jspGetString(&elem, &from_len);
+
+					jspGetRightArg(jsp, &elem);
+					if (elem.type != jpiString)
+						elog(ERROR, "invalid jsonpath item type for .replace() to");
+
+					to_str = jspGetString(&elem, &to_len);
+
+					replacedTxt = TextDatumGetCString(DirectFunctionCall3Coll(replace_text,
+						C_COLLATION_OID,
+						CStringGetTextDatum(txt),
+						CStringGetTextDatum(from_str),
+						CStringGetTextDatum(to_str)));
+
+					jb = &jbv;
+					jb->type = jbvString;
+					jb->val.string.val = replacedTxt;
+					jb->val.string.len = strlen(replacedTxt);
+				}
+				else {
+					RETURN_ERROR(ereport(ERROR,
+											 (errcode(ERRCODE_INVALID_ARGUMENT_FOR_SQL_JSON_DATETIME_FUNCTION),
+											  errmsg("jsonpath item method .%s() can only be applied to a boolean, string, numeric, or datetime value",
+													 jspOperationName(jsp->type)))));
+					break;
+				}
+
+				res = executeNextItem(cxt, jsp, NULL, jb, found, true);
+			}
+			break;
+
+
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", jsp->type);
 	}
