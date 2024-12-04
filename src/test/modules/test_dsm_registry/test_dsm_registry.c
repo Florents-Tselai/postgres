@@ -21,7 +21,7 @@
 
 PG_MODULE_MAGIC;
 
-#define HASH_MAX_KEYLEN NAMEDATALEN
+#define HASH_KEYLEN 64	/* Maybe too conservative? */
 
 typedef struct TestDSMRegistryStruct
 {
@@ -51,16 +51,18 @@ tdr_init_shmem(void *ptr)
 	printf("init msg=%s\n", state->msg);
 }
 
-
-typedef struct hashKey
+typedef enum valType
 {
-	char key[HASH_MAX_KEYLEN + 1];
-} hashKey;
+	TYPE_UNKNOWN = -1,
+	TYPE_INTEGER = 0,
+	TYPE_STRING = 1
+} valType;
 
 typedef struct hashEntry
 {
-	hashKey key;	/* MUST BE FIRST */
+	char key[HASH_KEYLEN];	/* MUST BE FIRST */
 
+	valType typ;
 	int val;
 } hashEntry;
 
@@ -76,119 +78,149 @@ tdr_attach_shmem(void)
 								   &found);
 	LWLockRegisterTranche(tdr_state->lck.tranche, "test_dsm_registry");
 
-	printf("shm attached\n");
 	if (hash == NULL)
 	{
 		Assert (hash == NULL);
-		printf("first time\t initializing hash too\n");
 		HASHCTL info;
-		info.keysize = sizeof(hashKey);
+		info.keysize = HASH_KEYLEN;
 		info.entrysize = sizeof(hashEntry);
 		info.hcxt = CurrentMemoryContext;
 		hash = ShmemInitHash("shmem hash", 10, 100, &info,
 			HASH_ELEM | HASH_STRINGS | HASH_CONTEXT);
-
-		printf("hash initialized num_entries=%ld\n", hash_get_num_entries(hash));
 	}
 
 }
 
-PG_FUNCTION_INFO_V1(set_val_in_shmem);
-Datum
-set_val_in_shmem(PG_FUNCTION_ARGS)
-{
-	tdr_attach_shmem();
-
-	LWLockAcquire(&tdr_state->lck, LW_EXCLUSIVE);
-	tdr_state->val = PG_GETARG_UINT32(0);
-	LWLockRelease(&tdr_state->lck);
-
-	PG_RETURN_VOID();
-}
-
-PG_FUNCTION_INFO_V1(get_val_in_shmem);
-Datum
-get_val_in_shmem(PG_FUNCTION_ARGS)
-{
-	int			ret;
-
-	tdr_attach_shmem();
-
-	LWLockAcquire(&tdr_state->lck, LW_SHARED);
-	ret = tdr_state->val;
-	LWLockRelease(&tdr_state->lck);
-
-	PG_RETURN_UINT32(ret);
-}
-
-PG_FUNCTION_INFO_V1(append_msg);
-
-Datum
-append_msg(PG_FUNCTION_ARGS)
-{
-	char       *new_msg = text_to_cstring(PG_GETARG_TEXT_PP(0));
-	int         new_msg_len = strlen(new_msg);
-	tdr_attach_shmem();
-
-	LWLockAcquire(&tdr_state->lck, LW_EXCLUSIVE);
-
-	int total_len = tdr_state->msglen + new_msg_len;
-
-	tdr_state->msg = repalloc(tdr_state->msg, total_len + 1);
-	memcpy(tdr_state->msg + tdr_state->msglen, new_msg, new_msg_len + 1);  /* +1 to include null terminator */
-	tdr_state->msglen = total_len;
-
-	/* Print the new message for debugging */
-	printf("msg=%s\n", tdr_state->msg);
-
-	/* Release the lock */
-	LWLockRelease(&tdr_state->lck);
-
-	/* Return the updated message */
-	PG_RETURN_TEXT_P(cstring_to_text(tdr_state->msg));
-}
-
 PG_FUNCTION_INFO_V1(hash_size);
-
 Datum
 hash_size(PG_FUNCTION_ARGS)
 {
 
+	long result;
 	tdr_attach_shmem();
 
-	PG_RETURN_INT32(hash_get_num_entries(hash));
+	LWLockAcquire(&tdr_state->lck, LW_SHARED);
+	result = hash_get_num_entries(hash);
+	LWLockRelease(&tdr_state->lck);
+
+	PG_RETURN_INT64(result);
 }
 
 PG_FUNCTION_INFO_V1(hash_put_int);
 Datum
 hash_put_int(PG_FUNCTION_ARGS)
 {
-	text		*key	= PG_GETARG_TEXT_P(0);
+	text *t_key = PG_GETARG_TEXT_PP(0);
+	char *key	= text_to_cstring(t_key);	/* Guaranteed null-terminated */
+	int key_len = VARSIZE_ANY_EXHDR(t_key);
 	int	value	= PG_GETARG_INT32(1);
 
-	int64 result;
+	Assert(key_len <= HASH_KEYLEN);
 
 	hashEntry	*entry;
-	bool found;
-
-
-	Assert(VARSIZE_ANY_EXHDR(key) <= HASH_MAX_KEYLEN);
-
-	if (VARSIZE_ANY_EXHDR(key) > HASH_MAX_KEYLEN)
-		ereport(ERROR,
-				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-				errmsg("hash key length %ld, exceeds max supported %d", VARSIZE_ANY_EXHDR(key), HASH_MAX_KEYLEN)));
+	bool		found;
 
 	tdr_attach_shmem();
 
-	entry = hash_search(hash, VARDATA_ANY(key), HASH_ENTER, &found);
+	LWLockAcquire(&tdr_state->lck, LW_SHARED);
+
+	entry = hash_search(hash, key, HASH_ENTER, &found);
 	if (!found)
 	{
+		entry->typ = TYPE_INTEGER;
 		entry->val = value;
 	}
 
-	result = hash_get_num_entries(hash);
+	LWLockRelease(&tdr_state->lck);
 
-	PG_RETURN_INT64(result);
+	/* Make sure */
+	Assert(sizeof(*entry) == HASH_KEYLEN + sizeof(valType) + sizeof(int));
+	Assert(entry->typ == TYPE_INTEGER);
+
+
+	PG_RETURN_VOID();
+}
+
+PG_FUNCTION_INFO_V1(hash_get_int);
+Datum
+hash_get_int(PG_FUNCTION_ARGS)
+{
+	text   *t_key = PG_GETARG_TEXT_PP(0);
+	char   *key   = text_to_cstring(t_key); /* Guaranteed null-terminated */
+	int     key_len = VARSIZE_ANY_EXHDR(t_key);
+	int     result;
+
+	hashEntry *entry;
+	bool found;
+
+	/* Ensure the key length is within permissible bounds */
+	if (key_len > HASH_KEYLEN)
+		ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("key length exceeds maximum allowed length of %d", HASH_KEYLEN)));
+
+	/* Attach to shared memory and acquire lock */
+	tdr_attach_shmem();
+
+	LWLockAcquire(&tdr_state->lck, LW_SHARED);
+
+	/* Search for the key in the hash table */
+	entry = hash_search(hash, key, HASH_FIND, &found);
+	if (found)
+	{
+		if (entry->typ != TYPE_INTEGER)
+		{
+			LWLockRelease(&tdr_state->lck); /* Release lock before raising error */
+			ereport(ERROR,
+					(errcode(ERRCODE_DATATYPE_MISMATCH),
+					 errmsg("value for key \"%s\" is not an integer", key)));
+		}
+		result = entry->val;
+	}
+	LWLockRelease(&tdr_state->lck);
+
+	/* If the key was not found, return NULL */
+	if (!found)
+		PG_RETURN_NULL();
+
+	/* Return the integer value */
+	PG_RETURN_INT32(result);
+}
+
+PG_FUNCTION_INFO_V1(hash_type);
+Datum
+hash_type(PG_FUNCTION_ARGS)
+{
+	text *t_key = PG_GETARG_TEXT_PP(0);
+	char *key	= text_to_cstring(t_key);	/* Guaranteed null-terminated */
+	int key_len = VARSIZE_ANY_EXHDR(t_key);
+
+	valType result;
+
+	Assert(key_len <= HASH_KEYLEN);
+
+	hashEntry	*entry;
+	bool		found;
+
+	tdr_attach_shmem();
+
+	LWLockAcquire(&tdr_state->lck, LW_SHARED);
+
+	entry = hash_search(hash, key, HASH_FIND, &found);
+	result = (found) ? entry->typ : TYPE_UNKNOWN;
+
+	LWLockRelease(&tdr_state->lck);
+
+	switch (result)
+	{
+		case TYPE_INTEGER:
+			PG_RETURN_TEXT_P(cstring_to_text("integer"));
+		case TYPE_STRING:
+			PG_RETURN_TEXT_P(cstring_to_text("string"));
+		case TYPE_UNKNOWN:
+			PG_RETURN_TEXT_P(cstring_to_text("unknown"));
+		default:
+			PG_RETURN_TEXT_P(cstring_to_text("unknown"));
+	}
 }
 

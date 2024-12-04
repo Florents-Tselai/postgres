@@ -8,20 +8,68 @@ SELECT hash_size();
 SELECT hash_put_int('key1', 1);
  hash_put_int 
 --------------
-            1
+ 
 (1 row)
 
-SELECT hash_put_int('key2', 1);
+SELECT hash_put_int('key2', 2);
  hash_put_int 
+--------------
+ 
+(1 row)
+
+SELECT hash_get_int('key2');
+ hash_get_int 
 --------------
             2
 (1 row)
 
--- switch database the hash should be the same
-\c
+SELECT hash_get_int('sdfgdfg');
+ hash_get_int 
+--------------
+             
+(1 row)
+
 SELECT hash_size();
  hash_size 
 -----------
          2
+(1 row)
+
+SELECT hash_type('key1');
+ hash_type 
+-----------
+ integer
+(1 row)
+
+SELECT hash_type('gdgf');
+ hash_type 
+-----------
+ unknown
+(1 row)
+
+SELECT hash_size(); -- 2
+ hash_size 
+-----------
+         2
+(1 row)
+
+-- switch database the hash should be the same
+\c
+SELECT hash_size(); -- 2
+ hash_size 
+-----------
+         2
+(1 row)
+
+SELECT hash_put_int('key3', 1);
+ hash_put_int 
+--------------
+ 
+(1 row)
+
+SELECT hash_size(); -- 3
+ hash_size 
+-----------
+         3
 (1 row)
 
