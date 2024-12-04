@@ -1,4 +1,10 @@
 CREATE EXTENSION test_dsm_registry;
-SELECT set_val_in_shmem(1236);
+
+SELECT hash_size();
+SELECT hash_put_int('key1', 1);
+SELECT hash_put_int('key2', 1);
+
+-- switch database the hash should be the same
 \c
-SELECT get_val_in_shmem();
+SELECT hash_size();
+
