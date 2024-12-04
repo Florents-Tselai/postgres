@@ -1,5 +1,6 @@
 CREATE EXTENSION test_dsm_registry;
 
+/* integers */
 SELECT hash_size();
 SELECT hash_put_int('key1', 1);
 SELECT hash_put_int('key2', 2);

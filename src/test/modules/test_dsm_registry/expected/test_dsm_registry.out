@@ -1,4 +1,5 @@
 CREATE EXTENSION test_dsm_registry;
+/* integers */
 SELECT hash_size();
  hash_size 
 -----------

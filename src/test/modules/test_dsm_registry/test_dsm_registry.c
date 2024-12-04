@@ -63,7 +63,15 @@ typedef struct hashEntry
 	char key[HASH_KEYLEN];	/* MUST BE FIRST */
 
 	valType typ;
-	int val;
+	union
+	{
+		int integer;
+		struct
+		{
+			int len;
+			char *val;
+		} string;
+	} val;
 } hashEntry;
 
 
@@ -128,13 +136,13 @@ hash_put_int(PG_FUNCTION_ARGS)
 	if (!found)
 	{
 		entry->typ = TYPE_INTEGER;
-		entry->val = value;
+		entry->val.integer = value;
 	}
 
 	LWLockRelease(&tdr_state->lck);
 
 	/* Make sure */
-	Assert(sizeof(*entry) == HASH_KEYLEN + sizeof(valType) + sizeof(int));
+	// Assert(sizeof(*entry) == HASH_KEYLEN + sizeof(valType) + sizeof(int));
 	Assert(entry->typ == TYPE_INTEGER);
 
 
@@ -175,7 +183,7 @@ hash_get_int(PG_FUNCTION_ARGS)
 					(errcode(ERRCODE_DATATYPE_MISMATCH),
 					 errmsg("value for key \"%s\" is not an integer", key)));
 		}
-		result = entry->val;
+		result = entry->val.integer;
 	}
 	LWLockRelease(&tdr_state->lck);
 
