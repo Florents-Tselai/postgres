@@ -122,7 +122,7 @@ hash_put_int(PG_FUNCTION_ARGS)
 
 	tdr_attach_shmem();
 
-	LWLockAcquire(&tdr_state->lck, LW_SHARED);
+	LWLockAcquire(&tdr_state->lck, LW_EXCLUSIVE);
 
 	entry = hash_search(hash, key, HASH_ENTER, &found);
 	if (!found)
