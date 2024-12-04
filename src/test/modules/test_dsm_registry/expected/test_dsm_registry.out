@@ -81,6 +81,12 @@ SELECT hash_put_string('str1', 'strval1 '); -- note trailing space
  
 (1 row)
 
+SELECT hash_size(); -- 4
+ hash_size 
+-----------
+         4
+(1 row)
+
 SELECT hash_get_string('str1');
  hash_get_string 
 -----------------

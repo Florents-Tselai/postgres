@@ -20,6 +20,7 @@ SELECT hash_size(); -- 3
 
 /* strings */
 SELECT hash_put_string('str1', 'strval1 '); -- note trailing space
+SELECT hash_size(); -- 4
 SELECT hash_get_string('str1');
 
 

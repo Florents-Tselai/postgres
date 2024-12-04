@@ -236,6 +236,27 @@ PG_FUNCTION_INFO_V1(hash_put_string);
 Datum
 hash_put_string(PG_FUNCTION_ARGS)
 {
+	text   *t_key = PG_GETARG_TEXT_PP(0);
+	char   *key   = text_to_cstring(t_key); /* Guaranteed null-terminated */
+	int     key_len = VARSIZE_ANY_EXHDR(t_key);
+
+	text   *t_val = PG_GETARG_TEXT_PP(1);
+	char   *val   = text_to_cstring(t_val); /* Guaranteed null-terminated */
+	int     val_len = VARSIZE_ANY_EXHDR(t_val);
+
+	bool	found;
+	hashEntry	*entry;
+
+	tdr_attach_shmem();
+
+	LWLockAcquire(&tdr_state->lck, LW_EXCLUSIVE);
+
+	entry = hash_search(hash, key, HASH_ENTER, &found);
+	entry->typ = TYPE_STRING;
+	entry->val.string.len = val_len;
+	entry->val.string.val = pstrdup(val);
+
+	LWLockRelease(&tdr_state->lck);
 
 	PG_RETURN_VOID();
 }
@@ -244,6 +265,8 @@ PG_FUNCTION_INFO_V1(hash_get_string);
 Datum
 hash_get_string(PG_FUNCTION_ARGS)
 {
+
+	tdr_attach_shmem();
 
 	PG_RETURN_TEXT_P(cstring_to_text("strval1 "));
 }
