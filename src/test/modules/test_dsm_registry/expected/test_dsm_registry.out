@@ -74,3 +74,16 @@ SELECT hash_size(); -- 3
          3
 (1 row)
 
+/* strings */
+SELECT hash_put_string('str1', 'strval1 '); -- note trailing space
+ hash_put_string 
+-----------------
+ 
+(1 row)
+
+SELECT hash_get_string('str1');
+ hash_get_string 
+-----------------
+ strval1 
+(1 row)
+

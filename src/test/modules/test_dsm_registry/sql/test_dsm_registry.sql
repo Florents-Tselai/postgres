@@ -18,3 +18,8 @@ SELECT hash_size(); -- 2
 SELECT hash_put_int('key3', 1);
 SELECT hash_size(); -- 3
 
+/* strings */
+SELECT hash_put_string('str1', 'strval1 '); -- note trailing space
+SELECT hash_get_string('str1');
+
+

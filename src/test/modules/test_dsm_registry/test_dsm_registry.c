@@ -232,3 +232,18 @@ hash_type(PG_FUNCTION_ARGS)
 	}
 }
 
+PG_FUNCTION_INFO_V1(hash_put_string);
+Datum
+hash_put_string(PG_FUNCTION_ARGS)
+{
+
+	PG_RETURN_VOID();
+}
+
+PG_FUNCTION_INFO_V1(hash_get_string);
+Datum
+hash_get_string(PG_FUNCTION_ARGS)
+{
+
+	PG_RETURN_TEXT_P(cstring_to_text("strval1 "));
+}
