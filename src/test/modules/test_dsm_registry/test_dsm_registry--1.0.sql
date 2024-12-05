@@ -8,3 +8,11 @@ CREATE FUNCTION set_val_in_shmem(val INT) RETURNS VOID
 
 CREATE FUNCTION get_val_in_shmem() RETURNS INT
 	AS 'MODULE_PATHNAME' LANGUAGE C;
+
+-- -- SQL definition for `insert_into_htab`
+-- CREATE OR REPLACE FUNCTION insert_into_htab(key int, value int)
+-- RETURNS void AS 'MODULE_PATHNAME' LANGUAGE C;
+--
+-- -- SQL definition for `get_from_htab`
+-- CREATE OR REPLACE FUNCTION get_from_htab(key int)
+-- RETURNS int AS 'MODULE_PATHNAME' LANGUAGE C;
