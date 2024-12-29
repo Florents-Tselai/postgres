@@ -506,6 +506,9 @@
 { aggfnoid => 'corr', aggtransfn => 'float8_regr_accum',
   aggfinalfn => 'float8_corr', aggcombinefn => 'float8_regr_combine',
   aggtranstype => '_float8', agginitval => '{0,0,0,0,0,0}' },
+{ aggfnoid => 'xicorr', aggtransfn => 'float8_regr_accum',
+  aggfinalfn => 'float8_xicorr', aggcombinefn => 'float8_regr_combine',
+  aggtranstype => '_float8', agginitval => '{0,0,0,0,0,0}' },
 
 # boolean-and and boolean-or
 { aggfnoid => 'bool_and', aggtransfn => 'booland_statefunc',
