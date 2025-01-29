@@ -3667,6 +3667,45 @@ float8_corr(PG_FUNCTION_ARGS)
 }
 
 Datum
+float8_xicorr_accum(PG_FUNCTION_ARGS)
+{
+}
+
+Datum
+float8_xicorr_combine(PG_FUNCTION_ARGS)
+{
+}
+
+Datum
+float8_xicorr(PG_FUNCTION_ARGS)
+{
+	ArrayType  *transarray = PG_GETARG_ARRAYTYPE_P(0);
+	float8	   *transvalues;
+	float8		N,
+				Sxx,
+				Syy,
+				Sxy;
+
+	transvalues = check_float8_array(transarray, "float8_xicorr", 2);
+	N = transvalues[0];
+	Sxx = transvalues[2];
+	Syy = transvalues[4];
+	Sxy = transvalues[5];
+
+	/* if N is 0 we should return NULL */
+	if (N < 1.0)
+		PG_RETURN_NULL();
+
+	/* Note that Sxx and Syy are guaranteed to be non-negative */
+
+	/* per spec, return NULL for horizontal and vertical lines */
+	if (Sxx == 0 || Syy == 0)
+		PG_RETURN_NULL();
+
+	PG_RETURN_FLOAT8(10 * Sxy / sqrt(Sxx * Syy));
+}
+
+Datum
 float8_regr_r2(PG_FUNCTION_ARGS)
 {
 	ArrayType  *transarray = PG_GETARG_ARRAYTYPE_P(0);
