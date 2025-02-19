@@ -614,6 +614,13 @@ LANGUAGE INTERNAL
 STRICT STABLE PARALLEL SAFE
 AS 'jsonb_strip_nulls';
 
+CREATE OR REPLACE FUNCTION
+  json_strip_nulls(target json, strip_in_arrays boolean DEFAULT false)
+RETURNS json
+LANGUAGE INTERNAL
+STRICT STABLE PARALLEL SAFE
+AS 'json_strip_nulls';
+
 -- default normalization form is NFC, per SQL standard
 CREATE OR REPLACE FUNCTION
   "normalize"(text, text DEFAULT 'NFC')
