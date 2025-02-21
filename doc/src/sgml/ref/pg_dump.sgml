@@ -249,16 +249,6 @@ PostgreSQL documentation
         dump if its extension is specified by <option>--extension</option>.
        </para>
 
-       <note>
-        <para>
-         When <option>-e</option> is specified,
-         <application>pg_dump</application> makes no attempt to dump any other
-         database objects that the selected extension(s) might depend upon.
-         Therefore, there is no guarantee that the results of a
-         specific-extension dump can be successfully restored by themselves
-         into a clean database.
-        </para>
-       </note>
       </listitem>
      </varlistentry>
 
@@ -435,16 +425,6 @@ PostgreSQL documentation
 
        <note>
         <para>
-         When <option>-n</option> is specified, <application>pg_dump</application>
-         makes no attempt to dump any other database objects that the selected
-         schema(s) might depend upon. Therefore, there is no guarantee
-         that the results of a specific-schema dump can be successfully
-         restored by themselves into a clean database.
-        </para>
-       </note>
-
-       <note>
-        <para>
          Non-schema objects such as large objects are not dumped when <option>-n</option> is
          specified.  You can add large objects back to the dump with the
          <option>--large-objects</option> switch.
@@ -583,16 +563,6 @@ PostgreSQL documentation
         be dumped regardless of those switches, and non-table objects will not
         be dumped.
        </para>
-
-       <note>
-        <para>
-         When <option>-t</option> is specified, <application>pg_dump</application>
-         makes no attempt to dump any other database objects that the selected
-         table(s) might depend upon. Therefore, there is no guarantee
-         that the results of a specific-table dump can be successfully
-         restored by themselves into a clean database.
-        </para>
-       </note>
 
       </listitem>
      </varlistentry>
@@ -1632,6 +1602,17 @@ CREATE DATABASE foo WITH TEMPLATE template0;
    and then commands to re-enable them after the data has been
    inserted.  If the restore is stopped in the middle, the system
    catalogs might be left in the wrong state.
+  </para>
+
+  <para>
+   When <option>-e</option>, <option>-n</option> or <option>-t</option> is specified,
+   <application>pg_dump</application> makes no attempt to dump any other
+   database objects that the selected extension(s) might depend upon.
+   Therefore, there is no guarantee that the results of a
+   specific-table or specific-schema dump can be successfully restored by themselves
+   into a clean database.
+   For <option>-e</option> in particular, note that the referred extension
+   must be installed (i.e. its shared object) separately, before it can be restored.
   </para>
 
   <para>
