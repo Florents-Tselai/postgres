@@ -4831,8 +4831,8 @@ SELECT format('Testing %3$s, %2$s, %s', 'one', 'two', 'three');
          padding if needed.
         </para>
         <para>
-         <literal>base64url_decode('d3d3LnBvc3RncmVzcWwub3Jn')</literal>
-         <returnvalue>'www.postgresql.org'::bytea</returnvalue>
+         <literal>convert_from(base64url_decode('d3d3LnBvc3RncmVzcWwub3Jn'), 'UTF8')</literal>
+         <returnvalue>www.postgresql.org</returnvalue>
         </para>
        </entry>
       </row>
