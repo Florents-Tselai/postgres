@@ -152,6 +152,7 @@ base64url_encode(PG_FUNCTION_ARGS)
 	int base64_len = pg_b64_enc_len(input_len);
 	char *base64 = palloc(base64_len);
 	int encoded_len;
+	char *base64url;
 
 	/* Encode the data */
 	encoded_len = pg_b64_encode(VARDATA(input), input_len, base64, base64_len);
@@ -159,7 +160,7 @@ base64url_encode(PG_FUNCTION_ARGS)
 		ereport(ERROR, (errmsg("base64 encoding failed")));
 
 	/* Convert to Base64URL format (replace '+' → '-', '/' → '_', remove '=') */
-	char *base64url = palloc(encoded_len); /* Allocate same size */
+	base64url = palloc(encoded_len); /* Allocate same size */
 	int j = 0;
 	for (int i = 0; i < encoded_len; i++)
 	{
@@ -182,6 +183,8 @@ base64url_decode(PG_FUNCTION_ARGS)
 	char *input_str = text_to_cstring(input);
 	int input_len = strlen(input_str);
 
+	int decoded_len, actual_decoded_len;
+
 	/* Prepare a Base64 string with padding */
 	int pad_len = (4 - (input_len % 4)) % 4;
 	char *base64 = palloc(input_len + pad_len);
@@ -201,10 +204,9 @@ base64url_decode(PG_FUNCTION_ARGS)
 	while (pad_len-- > 0)
 		base64[i++] = '=';
 
-	/* Decode Base64 */
-	int decoded_len = pg_b64_dec_len(i);
+	decoded_len = pg_b64_dec_len(i);
 	bytea *decoded = (bytea *) palloc(VARHDRSZ + decoded_len);
-	int actual_decoded_len = pg_b64_decode(base64, i, VARDATA(decoded), decoded_len);
+	actual_decoded_len = pg_b64_decode(base64, i, VARDATA(decoded), decoded_len);
 
 	if (actual_decoded_len < 0)
 		ereport(ERROR, (errmsg("invalid base64url input")));
