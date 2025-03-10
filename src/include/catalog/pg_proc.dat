@@ -1184,6 +1184,13 @@
   proname => 'int8', prorettype => 'int8',
   proargtypes => 'bytea', prosrc => 'bytea_int8' },
 
+{ oid => '8590', descr => 'base64url_encode',
+  proname => 'base64url_encode', prorettype => 'text',
+  proargtypes => 'bytea', prosrc => 'base64url_encode' },
+{ oid => '8591', descr => 'base64url_decode',
+  proname => 'base64url_decode', prorettype => 'bytea',
+  proargtypes => 'text', prosrc => 'base64url_decode' },
+
 { oid => '449', descr => 'hash',
   proname => 'hashint2', prorettype => 'int4', proargtypes => 'int2',
   prosrc => 'hashint2' },

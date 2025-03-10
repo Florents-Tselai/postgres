@@ -4794,7 +4794,49 @@ SELECT format('Testing %3$s, %2$s, %s', 'one', 'two', 'three');
         <returnvalue>\x5678</returnvalue>
        </para></entry>
       </row>
-    </tbody>
+
+      <row>
+       <entry role="func_table_entry">
+        <para role="func_signature">
+         <indexterm>
+          <primary>base64url_encode</primary>
+         </indexterm>
+         <function>base64url_encode</function> ( <parameter>input</parameter> <type>bytea</type> )
+         <returnvalue>text</returnvalue>
+        </para>
+        <para>
+         Encodes the given <parameter>input</parameter> in Base64URL format, replacing
+         '+' with '-', '/' with '_', and removing padding ('='). This is useful for
+         safe encoding in URLs and filenames.
+        </para>
+        <para>
+         <literal>base64url_encode('www.postgresql.org'::bytea)</literal>
+         <returnvalue>d3d3LnBvc3RncmVzcWwub3Jn</returnvalue>
+        </para>
+       </entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry">
+        <para role="func_signature">
+         <indexterm>
+          <primary>base64url_decode</primary>
+         </indexterm>
+         <function>base64url_decode</function> ( <parameter>input</parameter> <type>text</type> )
+         <returnvalue>bytea</returnvalue>
+        </para>
+        <para>
+         Decodes the given Base64URL-encoded <parameter>input</parameter> back into
+         its original binary format. Converts '-' to '+', '_' to '/', and restores
+         padding if needed.
+        </para>
+        <para>
+         <literal>base64url_decode('d3d3LnBvc3RncmVzcWwub3Jn')</literal>
+         <returnvalue>'www.postgresql.org'::bytea</returnvalue>
+        </para>
+       </entry>
+      </row>
+     </tbody>
    </tgroup>
   </table>
 

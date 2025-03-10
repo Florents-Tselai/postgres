@@ -877,3 +877,35 @@ SELECT unistr('wrong: \udb99\u0061');
 SELECT unistr('wrong: \U0000db99\U00000061');
 SELECT unistr('wrong: \U002FFFFF');
 SELECT unistr('wrong: \xyz');
+
+-- base64url_encode
+SELECT base64url_encode('www.postgresql.org'::bytea);
+SELECT base64url_encode(E'\\x00'::bytea); -- Expected: 'AA'
+SELECT base64url_encode('a'::bytea);      -- Expected: 'YQ'
+SELECT base64url_encode('ab'::bytea);     -- Expected: 'YWI'
+SELECT base64url_encode('abc'::bytea);    -- Expected: 'YWJj'
+SELECT base64url_encode(''::bytea);       -- Expected: ''
+SELECT base64url_encode(
+               'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#0^&*();:<>,. []{}'::bytea
+       );
+-- Expected:
+-- 'YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXpBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWjAxMjM0NTY3ODkhQCMwXiYqKCk7Ojw-'
+-- Note: The last character is '-' instead of '/' due to Base64URL encoding.
+
+-- base64url_decode
+SELECT base64url_decode('d3d3LnBvc3RncmVzcWwub3Jn'); -- Expected: 'www.postgresql.org'
+
+SELECT base64url_decode('AA');   -- Expected: E'\\x00'
+SELECT base64url_decode('YQ');   -- Expected: 'a'
+SELECT base64url_decode('YWI');  -- Expected: 'ab'
+SELECT base64url_decode('YWJj'); -- Expected: 'abc'
+SELECT base64url_decode('');     -- Expected: ''
+SELECT convert_from(
+               base64url_decode(
+                       'YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXpBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWjAxMjM0NTY3ODkhQCMwXiYqKCk7Ojw-'
+               ),
+               'UTF8'
+       );
+-- Expected: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#0^&*();:<>,. []{}'
+
+
