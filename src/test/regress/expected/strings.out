@@ -2792,3 +2792,100 @@ ERROR:  invalid Unicode code point: 2FFFFF
 SELECT unistr('wrong: \xyz');
 ERROR:  invalid Unicode escape
 HINT:  Unicode escapes must be \XXXX, \+XXXXXX, \uXXXX, or \UXXXXXXXX.
+-- base64url_encode
+SELECT base64url_encode('www.postgresql.org'::bytea);
+     base64url_encode     
+--------------------------
+ d3d3LnBvc3RncmVzcWwub3Jn
+(1 row)
+
+SELECT base64url_encode(E'\\x00'::bytea); -- Expected: 'AA'
+ base64url_encode 
+------------------
+ AA
+(1 row)
+
+SELECT base64url_encode('a'::bytea);      -- Expected: 'YQ'
+ base64url_encode 
+------------------
+ YQ
+(1 row)
+
+SELECT base64url_encode('ab'::bytea);     -- Expected: 'YWI'
+ base64url_encode 
+------------------
+ YWI
+(1 row)
+
+SELECT base64url_encode('abc'::bytea);    -- Expected: 'YWJj'
+ base64url_encode 
+------------------
+ YWJj
+(1 row)
+
+SELECT base64url_encode(''::bytea);       -- Expected: ''
+ base64url_encode 
+------------------
+ 
+(1 row)
+
+SELECT base64url_encode(
+               'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#0^&*();:<>,. []{}'::bytea
+       );
+                                                base64url_encode                                                
+----------------------------------------------------------------------------------------------------------------
+ YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXpBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWjAxMjM0NTY3ODkhQCMwXiYqKCk7Ojw-LC4gW117fQ
+(1 row)
+
+-- Expected:
+-- 'YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXpBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWjAxMjM0NTY3ODkhQCMwXiYqKCk7Ojw-'
+-- Note: The last character is '-' instead of '/' due to Base64URL encoding.
+-- base64url_decode
+SELECT base64url_decode('d3d3LnBvc3RncmVzcWwub3Jn'); -- Expected: 'www.postgresql.org'
+  base64url_decode  
+--------------------
+ www.postgresql.org
+(1 row)
+
+SELECT base64url_decode('AA');   -- Expected: E'\\x00'
+ base64url_decode 
+------------------
+ \000
+(1 row)
+
+SELECT base64url_decode('YQ');   -- Expected: 'a'
+ base64url_decode 
+------------------
+ a
+(1 row)
+
+SELECT base64url_decode('YWI');  -- Expected: 'ab'
+ base64url_decode 
+------------------
+ ab
+(1 row)
+
+SELECT base64url_decode('YWJj'); -- Expected: 'abc'
+ base64url_decode 
+------------------
+ abc
+(1 row)
+
+SELECT base64url_decode('');     -- Expected: ''
+ base64url_decode 
+------------------
+ 
+(1 row)
+
+SELECT convert_from(
+               base64url_decode(
+                       'YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXpBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWjAxMjM0NTY3ODkhQCMwXiYqKCk7Ojw-'
+               ),
+               'UTF8'
+       );
+                                convert_from                                 
+-----------------------------------------------------------------------------
+ abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#0^&*();:<>
+(1 row)
+
+-- Expected: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#0^&*();:<>,. []{}'

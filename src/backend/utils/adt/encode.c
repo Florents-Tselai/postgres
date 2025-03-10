@@ -19,6 +19,7 @@
 #include "utils/builtins.h"
 #include "utils/memutils.h"
 #include "varatt.h"
+#include "common/base64.h"
 
 
 /*
@@ -140,6 +141,97 @@ binary_decode(PG_FUNCTION_ARGS)
 	PG_RETURN_BYTEA_P(result);
 }
 
+/* Base64URL Encode */
+Datum
+base64url_encode(PG_FUNCTION_ARGS)
+{
+	bytea *input;
+	int input_len;
+	int base64_len;
+	char *base64;
+	int encoded_len;
+	char *base64url;
+	int j, i;
+
+	/* Get input */
+	input = PG_GETARG_BYTEA_P(0);
+	input_len = VARSIZE(input) - VARHDRSZ;
+
+	/* Compute required buffer size */
+	base64_len = pg_b64_enc_len(input_len);
+	base64 = palloc(base64_len);
+
+	/* Encode the data */
+	encoded_len = pg_b64_encode(VARDATA(input), input_len, base64, base64_len);
+	if (encoded_len < 0)
+		ereport(ERROR, (errmsg("base64 encoding failed")));
+
+	/* Convert to Base64URL format (replace '+' → '-', '/' → '_', remove '=') */
+	base64url = palloc(encoded_len); /* Allocate same size */
+	j = 0;
+	for (i = 0; i < encoded_len; i++)
+	{
+		if (base64[i] == '+')
+			base64url[j++] = '-';
+		else if (base64[i] == '/')
+			base64url[j++] = '_';
+		else if (base64[i] != '=')
+			base64url[j++] = base64[i];
+	}
+
+	/* Return properly sized text datum */
+	PG_RETURN_TEXT_P(cstring_to_text_with_len(base64url, j));
+}
+
+Datum
+base64url_decode(PG_FUNCTION_ARGS)
+{
+	text *input;
+	char *input_str;
+	int input_len;
+	int decoded_len, actual_decoded_len;
+	int pad_len;
+	char *base64;
+	int i;
+	bytea *decoded;
+
+	/* Get input */
+	input = PG_GETARG_TEXT_P(0);
+	input_str = text_to_cstring(input);
+	input_len = strlen(input_str);
+
+	/* Prepare a Base64 string with padding */
+	pad_len = (4 - (input_len % 4)) % 4;
+	base64 = palloc(input_len + pad_len);
+
+	/* Convert Base64URL to standard Base64 */
+	for (i = 0; i < input_len; i++)
+	{
+		if (input_str[i] == '-')
+			base64[i] = '+';
+		else if (input_str[i] == '_')
+			base64[i] = '/';
+		else
+			base64[i] = input_str[i];
+	}
+
+	/* Add necessary padding */
+	while (pad_len-- > 0)
+		base64[i++] = '=';
+
+	/* Decode Base64 */
+	decoded_len = pg_b64_dec_len(i);
+	decoded = (bytea *) palloc(VARHDRSZ + decoded_len);
+	actual_decoded_len = pg_b64_decode(base64, i, VARDATA(decoded), decoded_len);
+
+	if (actual_decoded_len < 0)
+		ereport(ERROR, (errmsg("invalid base64url input")));
+
+	/* Set correct size */
+	SET_VARSIZE(decoded, VARHDRSZ + actual_decoded_len);
+
+	PG_RETURN_BYTEA_P(decoded);
+}
 
 /*
  * HEX
