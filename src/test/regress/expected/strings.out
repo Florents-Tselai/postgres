@@ -2323,6 +2323,58 @@ SELECT decode(encode('\x1234567890abcdef00', 'escape'), 'escape');
  \x1234567890abcdef00
 (1 row)
 
+-- base64url
+SELECT encode('\x1234567890abcdef00', 'base64url');
+    encode    
+--------------
+ EjRWeJCrze8A
+(1 row)
+
+SELECT decode(encode('\x1234567890abcdef00', 'base64url'), 'base64url');
+        decode        
+----------------------
+ \x1234567890abcdef00
+(1 row)
+
+-- Special characters in binary data
+SELECT encode('\x00ff88ee77', 'base64url'); -- Includes null byte (\x00) and high-bit characters
+ encode  
+---------
+ AP-I7nc
+(1 row)
+
+SELECT decode(encode('\x00ff88ee77', 'base64url'), 'base64url');
+    decode    
+--------------
+ \x00ff88ee77
+(1 row)
+
+-- Padding edge case (length % 3 = 1)
+SELECT encode('\x66', 'base64url'); -- Expected to remove padding
+ encode 
+--------
+ Zg
+(1 row)
+
+SELECT decode(encode('\x66', 'base64url'), 'base64url');
+ decode 
+--------
+ \x66
+(1 row)
+
+-- Padding edge case (length % 3 = 2)
+SELECT encode('\x6666', 'base64url'); -- Another case where padding is removed
+ encode 
+--------
+ ZmY
+(1 row)
+
+SELECT decode(encode('\x6666', 'base64url'), 'base64url'); -- Should match original bytea
+ decode 
+--------
+ \x6666
+(1 row)
+
 --
 -- get_bit/set_bit etc
 --

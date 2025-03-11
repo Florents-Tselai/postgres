@@ -738,7 +738,18 @@ SELECT decode(encode(('\x' || repeat('1234567890abcdef0001', 7))::bytea,
                      'base64'), 'base64');
 SELECT encode('\x1234567890abcdef00', 'escape');
 SELECT decode(encode('\x1234567890abcdef00', 'escape'), 'escape');
-
+-- base64url
+SELECT encode('\x1234567890abcdef00', 'base64url');
+SELECT decode(encode('\x1234567890abcdef00', 'base64url'), 'base64url');
+-- Special characters in binary data
+SELECT encode('\x00ff88ee77', 'base64url'); -- Includes null byte (\x00) and high-bit characters
+SELECT decode(encode('\x00ff88ee77', 'base64url'), 'base64url');
+-- Padding edge case (length % 3 = 1)
+SELECT encode('\x66', 'base64url'); -- Expected to remove padding
+SELECT decode(encode('\x66', 'base64url'), 'base64url');
+-- Padding edge case (length % 3 = 2)
+SELECT encode('\x6666', 'base64url'); -- Another case where padding is removed
+SELECT decode(encode('\x6666', 'base64url'), 'base64url'); -- Should match original bytea
 --
 -- get_bit/set_bit etc
 --

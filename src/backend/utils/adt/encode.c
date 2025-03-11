@@ -415,6 +415,81 @@ pg_base64_dec_len(const char *src, size_t srclen)
 	return ((uint64) srclen * 3) >> 2;
 }
 
+static uint64
+pg_base64url_enc_len(const char *src, size_t srclen)
+{
+	return ((uint64) srclen + 2) / 3 * 4;
+}
+
+static uint64
+pg_base64url_dec_len(const char *src, size_t srclen)
+{
+	size_t rem = srclen % 4;
+
+	uint64 len = (srclen / 4) * 3;
+
+	/* Adjust for missing padding */
+	if (rem == 2)
+		len += 1; /* 2 extra chars → 1 decoded byte */
+	else if (rem == 3)
+		len += 2; /* 3 extra chars → 2 decoded bytes */
+
+	return len;
+}
+
+static uint64
+pg_base64url_encode(const char *src, size_t len, char *dst)
+{
+	uint64 encoded_len = pg_base64_encode(src, len, dst);
+
+	/* Convert Base64 to Base64URL */
+	for (uint64 i = 0; i < encoded_len; i++)
+	{
+		if (dst[i] == '+')
+			dst[i] = '-';
+		else if (dst[i] == '/')
+			dst[i] = '_';
+	}
+
+	/* Trim '=' padding */
+	while (encoded_len > 0 && dst[encoded_len - 1] == '=')
+		encoded_len--;
+
+	/* Ensure null termination */
+	dst[encoded_len] = '\0';
+
+	return encoded_len;
+}
+
+static uint64
+pg_base64url_decode(const char *src, size_t len, char *dst)
+{
+	char *base64 = palloc(len + 4); /* Allocate extra space */
+	size_t i;
+	size_t pad_len;
+
+	/* Convert Base64URL back to Base64 */
+	for (i = 0; i < len; i++)
+	{
+		if (src[i] == '-')
+			base64[i] = '+';
+		else if (src[i] == '_')
+			base64[i] = '/';
+		else
+			base64[i] = src[i];
+	}
+
+	/* Restore padding if needed */
+	pad_len = (4 - (len % 4)) % 4;
+	while (pad_len--)
+		base64[i++] = '=';
+
+	uint64 decoded_len = pg_base64_decode(base64, i, dst);
+	pfree(base64); /* Free allocated memory */
+
+	return decoded_len;
+}
+
 /*
  * Escape
  * Minimally escape bytea to text.
@@ -604,6 +679,12 @@ static const struct
 		"base64",
 		{
 			pg_base64_enc_len, pg_base64_dec_len, pg_base64_encode, pg_base64_decode
+		}
+	},
+	{
+		"base64url",
+		{
+			pg_base64url_enc_len, pg_base64url_dec_len, pg_base64url_encode, pg_base64url_decode
 		}
 	},
 	{
