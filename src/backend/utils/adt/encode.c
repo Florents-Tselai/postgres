@@ -467,6 +467,7 @@ pg_base64url_decode(const char *src, size_t len, char *dst)
 	char *base64 = palloc(len + 4); /* Allocate extra space */
 	size_t i;
 	size_t pad_len;
+	uint64 decoded_len;
 
 	/* Convert Base64URL back to Base64 */
 	for (i = 0; i < len; i++)
@@ -484,7 +485,7 @@ pg_base64url_decode(const char *src, size_t len, char *dst)
 	while (pad_len--)
 		base64[i++] = '=';
 
-	uint64 decoded_len = pg_base64_decode(base64, i, dst);
+	decoded_len = pg_base64_decode(base64, i, dst);
 	pfree(base64); /* Free allocated memory */
 
 	return decoded_len;
