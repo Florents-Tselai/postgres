@@ -204,6 +204,8 @@ GetNamedDSMSegment(const char *name, size_t size,
 }
 
 void
+iterate_dsm_registry(void (*callback)(DSMRegistryEntry *, void *), void *arg);
+void
 iterate_dsm_registry(void (*callback)(DSMRegistryEntry *, void *), void *arg)
 {
     DSMRegistryEntry *entry;
