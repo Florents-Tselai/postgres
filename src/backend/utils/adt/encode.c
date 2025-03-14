@@ -416,6 +416,126 @@ pg_base64_dec_len(const char *src, size_t srclen)
 }
 
 /*
+ * Calculate the length of base64url encoded output for given input length
+ * Base64url encoding: 3 bytes -> 4 chars, padding to multiple of 4
+ */
+static uint64
+pg_base64url_enc_len(const char *src, size_t srclen)
+{
+	uint64 result;
+
+	/*
+	 * Base64 encoding converts 3 bytes into 4 characters
+	 * Formula: ceil(srclen / 3) * 4
+	 *
+	 * Unlike standard base64, base64url doesn't use padding characters
+	 * when the input length is not divisible by 3
+	 */
+	result = (srclen + 2) / 3 * 4;  /* ceiling division by 3, then multiply by 4 */
+
+	return result;
+}
+
+
+static uint64
+pg_base64url_dec_len(const char *src, size_t srclen)
+{
+	/* For Base64, each 4 characters of input produce at most 3 bytes of output */
+	/* For Base64URL without padding, we need to round up to the nearest 4 */
+	size_t adjusted_len = srclen;
+	if (srclen % 4 != 0)
+		adjusted_len += 4 - (srclen % 4);
+
+	return (adjusted_len * 3) / 4;
+}
+
+static uint64
+pg_base64url_encode(const char *src, size_t len, char *dst)
+{
+	uint64 encoded_len;
+	if (len == 0)
+		return 0;
+
+	encoded_len = pg_base64_encode(src, len, dst);
+
+	/* Convert Base64 to Base64URL */
+	for (uint64 i = 0; i < encoded_len; i++) {
+		if (dst[i] == '+')
+			dst[i] = '-';
+		else if (dst[i] == '/')
+			dst[i] = '_';
+	}
+
+	/* Trim '=' padding */
+	while (encoded_len > 0 && dst[encoded_len - 1] == '=')
+		encoded_len--;
+
+	return encoded_len;
+}
+
+static uint64
+pg_base64url_decode(const char *src, size_t len, char *dst)
+{
+	size_t i;
+	uint64 decoded_len;
+	char *base64;
+
+	/* Handle empty input specially */
+	if (len == 0)
+		return 0;
+
+	/* Calculate padding needed for standard base64 */
+	size_t pad_len = 0;
+	if (len % 4 != 0)
+		pad_len = 4 - (len % 4);
+
+	/* Allocate memory for converted string */
+	size_t base64_len = len + pad_len;
+	base64 = palloc(base64_len + 1); /* +1 for null terminator */
+
+	/* Convert Base64URL to Base64 */
+	for (i = 0; i < len; i++)
+	{
+		char c = src[i];
+		if (c == '-')
+			base64[i] = '+';  /* Convert '-' to '+' */
+		else if (c == '_')
+			base64[i] = '/';  /* Convert '_' to '/' */
+		else if ((c >= 'A' && c <= 'Z') ||
+				 (c >= 'a' && c <= 'z') ||
+				 (c >= '0' && c <= '9'))
+			base64[i] = c;    /* Keep alphanumeric chars unchanged */
+		else if (c == '=')
+			ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("invalid base64url input"),
+				 errhint("Base64URL encoding should not contain padding '='.")));
+		else if (c == '+' || c == '/')
+			ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("invalid base64url character: '%c'", c),
+				 errhint("Base64URL should use '-' instead of '+' and '_' instead of '/'.")));
+		else
+			ereport(ERROR,
+				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+				 errmsg("invalid base64url character: '%c'", c)));
+	}
+
+	/* Add padding if necessary */
+	for (i = 0; i < pad_len; i++)
+		base64[len + i] = '=';
+
+	base64[base64_len] = '\0';  /* Null-terminate for safety */
+
+	/* Decode using the standard Base64 decoder */
+	decoded_len = pg_base64_decode(base64, base64_len, dst);
+
+	/* Free allocated memory */
+	pfree(base64);
+	return decoded_len;
+}
+
+/*
  * Escape
  * Minimally escape bytea to text.
  * De-escape text to bytea.
@@ -604,6 +724,12 @@ static const struct
 		"base64",
 		{
 			pg_base64_enc_len, pg_base64_dec_len, pg_base64_encode, pg_base64_decode
+		}
+	},
+	{
+		"base64url",
+		{
+			pg_base64url_enc_len, pg_base64url_dec_len, pg_base64url_encode, pg_base64url_decode
 		}
 	},
 	{

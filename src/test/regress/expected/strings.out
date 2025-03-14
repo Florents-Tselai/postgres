@@ -2342,6 +2342,63 @@ SELECT decode(encode('\x1234567890abcdef00', 'escape'), 'escape');
 (1 row)
 
 --
+-- encode/decode Base64URL
+--
+SET bytea_output TO hex;
+-- Flaghsip Test case against base64.
+-- Notice the = padding removed at the end and special chars.
+SELECT encode('\x69b73eff', 'base64');  -- Expected: abc+/w==
+  encode  
+----------
+ abc+/w==
+(1 row)
+
+SELECT encode('\x69b73eff', 'base64url');  -- Expected: abc-_w
+ encode 
+--------
+ abc-_w
+(1 row)
+
+SELECT decode(encode('\x69b73eff', 'base64url'), 'base64url');
+   decode   
+------------
+ \x69b73eff
+(1 row)
+
+-- Test basic encoding/decoding
+SELECT encode('\x1234567890abcdef00', 'base64url');  -- Expected: EjRWeJCrze8A
+    encode    
+--------------
+ EjRWeJCrze8A
+(1 row)
+
+SELECT decode(encode('\x1234567890abcdef00', 'base64url'), 'base64url');  -- Expected: \x1234567890abcdef00
+        decode        
+----------------------
+ \x1234567890abcdef00
+(1 row)
+
+-- Test with empty input
+SELECT encode('', 'base64url');
+ encode 
+--------
+ 
+(1 row)
+
+SELECT decode('', 'base64url');
+ decode 
+--------
+ \x
+(1 row)
+
+-- Test round-trip conversion
+SELECT encode(decode('SGVsbG8gV29ybGQh', 'base64url'), 'base64url');  -- Expected: SGVsbG8gV29ybGQh (decodes to "Hello World!")
+      encode      
+------------------
+ SGVsbG8gV29ybGQh
+(1 row)
+
+--
 -- get_bit/set_bit etc
 --
 SELECT get_bit('\x1234567890abcdef00'::bytea, 43);
