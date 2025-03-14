@@ -476,7 +476,7 @@ pg_base64url_encode(const char *src, size_t len, char *dst)
 static uint64
 pg_base64url_decode(const char *src, size_t len, char *dst)
 {
-	size_t i;
+	size_t i, pad_len, base64_len;
 	uint64 decoded_len;
 	char *base64;
 
@@ -485,12 +485,12 @@ pg_base64url_decode(const char *src, size_t len, char *dst)
 		return 0;
 
 	/* Calculate padding needed for standard base64 */
-	size_t pad_len = 0;
+	pad_len = 0;
 	if (len % 4 != 0)
 		pad_len = 4 - (len % 4);
 
 	/* Allocate memory for converted string */
-	size_t base64_len = len + pad_len;
+	base64_len = len + pad_len;
 	base64 = palloc(base64_len + 1); /* +1 for null terminator */
 
 	/* Convert Base64URL to Base64 */
