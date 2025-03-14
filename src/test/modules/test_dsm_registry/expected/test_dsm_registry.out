@@ -12,3 +12,9 @@ SELECT get_val_in_shmem();
              1236
 (1 row)
 
+SELECT * FROM pg_dsm_registry;
+       name        | size 
+-------------------+------
+ test_dsm_registry |   20
+(1 row)
+
