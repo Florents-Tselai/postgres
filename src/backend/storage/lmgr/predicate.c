@@ -1226,8 +1226,11 @@ PredicateLockShmemInit(void)
 	 */
 	max_table_size *= 10;
 
+	requestSize = add_size(PredXactListDataSize,
+						   (mul_size((Size) max_table_size,
+									 sizeof(SERIALIZABLEXACT))));
 	PredXact = ShmemInitStruct("PredXactList",
-							   PredXactListDataSize,
+							   requestSize,
 							   &found);
 	Assert(found == IsUnderPostmaster);
 	if (!found)
@@ -1242,9 +1245,7 @@ PredicateLockShmemInit(void)
 		PredXact->LastSxactCommitSeqNo = FirstNormalSerCommitSeqNo - 1;
 		PredXact->CanPartialClearThrough = 0;
 		PredXact->HavePartialClearedThrough = 0;
-		requestSize = mul_size((Size) max_table_size,
-							   sizeof(SERIALIZABLEXACT));
-		PredXact->element = ShmemAlloc(requestSize);
+		PredXact->element = (SERIALIZABLEXACT *) ((char *) PredXact + PredXactListDataSize);
 		/* Add all elements to available list, clean. */
 		memset(PredXact->element, 0, requestSize);
 		for (i = 0; i < max_table_size; i++)
@@ -1299,9 +1300,11 @@ PredicateLockShmemInit(void)
 	 * probably OK.
 	 */
 	max_table_size *= 5;
+	requestSize = mul_size((Size) max_table_size,
+						   RWConflictDataSize);
 
 	RWConflictPool = ShmemInitStruct("RWConflictPool",
-									 RWConflictPoolHeaderDataSize,
+									 RWConflictPoolHeaderDataSize + requestSize,
 									 &found);
 	Assert(found == IsUnderPostmaster);
 	if (!found)
@@ -1309,9 +1312,7 @@ PredicateLockShmemInit(void)
 		int			i;
 
 		dlist_init(&RWConflictPool->availableList);
-		requestSize = mul_size((Size) max_table_size,
-							   RWConflictDataSize);
-		RWConflictPool->element = ShmemAlloc(requestSize);
+		RWConflictPool->element = (RWConflict) ((char *) RWConflictPool + RWConflictPoolHeaderDataSize);
 		/* Add all elements to available list, clean. */
 		memset(RWConflictPool->element, 0, requestSize);
 		for (i = 0; i < max_table_size; i++)
