@@ -2827,11 +2827,13 @@ static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, 
 			jsp->type == jpiStrSplitPartFunc);
 	JsonbValue	jbvbuf;
 	bool		hasNext;
-	JsonPathExecResult res = jperNotFound;
+	JsonPathExecResult res;
 	JsonPathItem elem;
 	Datum		str; /* Datum representation for the current string value. The first argument to internal functions */
 	char		*tmp = NULL;
 	char		*resStr = NULL;
+
+	res = jperNotFound;
 
 	if (!(jb = getScalar(jb, jbvString)))
 		RETURN_ERROR(ereport(ERROR,
