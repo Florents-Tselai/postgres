@@ -36,7 +36,7 @@
  * the probability of unintended failure) than to fix the total time
  * spent.
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -51,7 +51,6 @@
 #include <unistd.h>
 
 #include "common/pg_prng.h"
-#include "port/atomics.h"
 #include "storage/s_lock.h"
 #include "utils/wait_event.h"
 

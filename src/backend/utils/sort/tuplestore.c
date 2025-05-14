@@ -43,7 +43,7 @@
  * before switching to the other state or activating a different read pointer.
  *
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -265,7 +265,7 @@ tuplestore_begin_common(int eflags, bool interXact, int maxKBytes)
 	state->truncated = false;
 	state->usedDisk = false;
 	state->maxSpace = 0;
-	state->allowedMem = maxKBytes * 1024L;
+	state->allowedMem = maxKBytes * (int64) 1024;
 	state->availMem = state->allowedMem;
 	state->myfile = NULL;
 
@@ -751,7 +751,7 @@ tuplestore_puttupleslot(Tuplestorestate *state,
 	tuple = ExecCopySlotMinimalTuple(slot);
 	USEMEM(state, GetMemoryChunkSpace(tuple));
 
-	tuplestore_puttuple_common(state, (void *) tuple);
+	tuplestore_puttuple_common(state, tuple);
 
 	MemoryContextSwitchTo(oldcxt);
 }
@@ -771,7 +771,7 @@ tuplestore_puttuple(Tuplestorestate *state, HeapTuple tuple)
 	 */
 	tuple = COPYTUP(state, tuple);
 
-	tuplestore_puttuple_common(state, (void *) tuple);
+	tuplestore_puttuple_common(state, tuple);
 
 	MemoryContextSwitchTo(oldcxt);
 }
@@ -787,10 +787,10 @@ tuplestore_putvalues(Tuplestorestate *state, TupleDesc tdesc,
 	MinimalTuple tuple;
 	MemoryContext oldcxt = MemoryContextSwitchTo(state->context);
 
-	tuple = heap_form_minimal_tuple(tdesc, values, isnull);
+	tuple = heap_form_minimal_tuple(tdesc, values, isnull, 0);
 	USEMEM(state, GetMemoryChunkSpace(tuple));
 
-	tuplestore_puttuple_common(state, (void *) tuple);
+	tuplestore_puttuple_common(state, tuple);
 
 	MemoryContextSwitchTo(oldcxt);
 }
@@ -1139,7 +1139,7 @@ tuplestore_gettupleslot(Tuplestorestate *state, bool forward,
 	{
 		if (copy && !should_free)
 		{
-			tuple = heap_copy_minimal_tuple(tuple);
+			tuple = heap_copy_minimal_tuple(tuple, 0);
 			should_free = true;
 		}
 		ExecStoreMinimalTuple(tuple, slot, should_free);
@@ -1590,9 +1590,9 @@ copytup_heap(Tuplestorestate *state, void *tup)
 {
 	MinimalTuple tuple;
 
-	tuple = minimal_tuple_from_heap_tuple((HeapTuple) tup);
+	tuple = minimal_tuple_from_heap_tuple((HeapTuple) tup, 0);
 	USEMEM(state, GetMemoryChunkSpace(tuple));
-	return (void *) tuple;
+	return tuple;
 }
 
 static void
@@ -1629,5 +1629,5 @@ readtup_heap(Tuplestorestate *state, unsigned int len)
 	BufFileReadExact(state->myfile, tupbody, tupbodylen);
 	if (state->backward)		/* need trailing length word? */
 		BufFileReadExact(state->myfile, &tuplen, sizeof(tuplen));
-	return (void *) tuple;
+	return tuple;
 }

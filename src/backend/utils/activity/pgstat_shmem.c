@@ -3,7 +3,7 @@
  * pgstat_shmem.c
  *	  Storage of stats entries in shared memory
  *
- * Copyright (c) 2001-2024, PostgreSQL Global Development Group
+ * Copyright (c) 2001-2025, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/utils/activity/pgstat_shmem.c
@@ -304,6 +304,11 @@ pgstat_init_entry(PgStat_Kind kind,
 	 * further if a longer lived reference is needed.
 	 */
 	pg_atomic_init_u32(&shhashent->refcount, 1);
+
+	/*
+	 * Initialize "generation" to 0, as freshly created.
+	 */
+	pg_atomic_init_u32(&shhashent->generation, 0);
 	shhashent->dropped = false;
 
 	chunk = dsa_allocate0(pgStatLocal.dsa, pgstat_get_kind_info(kind)->shared_size);
@@ -327,6 +332,12 @@ pgstat_reinit_entry(PgStat_Kind kind, PgStatShared_HashEntry *shhashent)
 
 	/* mark as not dropped anymore */
 	pg_atomic_fetch_add_u32(&shhashent->refcount, 1);
+
+	/*
+	 * Increment "generation", to let any backend with local references know
+	 * that what they point to is outdated.
+	 */
+	pg_atomic_fetch_add_u32(&shhashent->generation, 1);
 	shhashent->dropped = false;
 
 	/* reinitialize content */
@@ -367,6 +378,7 @@ pgstat_acquire_entry_ref(PgStat_EntryRef *entry_ref,
 
 	entry_ref->shared_stats = shheader;
 	entry_ref->shared_entry = shhashent;
+	entry_ref->generation = pg_atomic_read_u32(&shhashent->generation);
 }
 
 /*
@@ -432,10 +444,17 @@ PgStat_EntryRef *
 pgstat_get_entry_ref(PgStat_Kind kind, Oid dboid, uint64 objid, bool create,
 					 bool *created_entry)
 {
-	PgStat_HashKey key = {.kind = kind,.dboid = dboid,.objid = objid};
+	PgStat_HashKey key;
 	PgStatShared_HashEntry *shhashent;
 	PgStatShared_Common *shheader = NULL;
 	PgStat_EntryRef *entry_ref;
+
+	/* clear padding */
+	memset(&key, 0, sizeof(struct PgStat_HashKey));
+
+	key.kind = kind;
+	key.dboid = dboid;
+	key.objid = objid;
 
 	/*
 	 * passing in created_entry only makes sense if we possibly could create
@@ -525,7 +544,8 @@ pgstat_get_entry_ref(PgStat_Kind kind, Oid dboid, uint64 objid, bool create,
 			 * case are replication slot stats, where a new slot can be
 			 * created with the same index just after dropping. But oid
 			 * wraparound can lead to other cases as well. We just reset the
-			 * stats to their plain state.
+			 * stats to their plain state, while incrementing its "generation"
+			 * in the shared entry for any remaining local references.
 			 */
 			shheader = pgstat_reinit_entry(kind, shhashent);
 			pgstat_acquire_entry_ref(entry_ref, shhashent, shheader);
@@ -592,10 +612,27 @@ pgstat_release_entry_ref(PgStat_HashKey key, PgStat_EntryRef *entry_ref,
 			if (!shent)
 				elog(ERROR, "could not find just referenced shared stats entry");
 
-			Assert(pg_atomic_read_u32(&entry_ref->shared_entry->refcount) == 0);
-			Assert(entry_ref->shared_entry == shent);
-
-			pgstat_free_entry(shent, NULL);
+			/*
+			 * This entry may have been reinitialized while trying to release
+			 * it, so double-check that it has not been reused while holding a
+			 * lock on its shared entry.
+			 */
+			if (pg_atomic_read_u32(&entry_ref->shared_entry->generation) ==
+				entry_ref->generation)
+			{
+				/* Same "generation", so we're OK with the removal */
+				Assert(pg_atomic_read_u32(&entry_ref->shared_entry->refcount) == 0);
+				Assert(entry_ref->shared_entry == shent);
+				pgstat_free_entry(shent, NULL);
+			}
+			else
+			{
+				/*
+				 * Shared stats entry has been reinitialized, so do not drop
+				 * its shared entry, only release its lock.
+				 */
+				dshash_release_lock(pgStatLocal.shared_hash, shent);
+			}
 		}
 	}
 
@@ -606,6 +643,13 @@ pgstat_release_entry_ref(PgStat_HashKey key, PgStat_EntryRef *entry_ref,
 		pfree(entry_ref);
 }
 
+/*
+ * Acquire exclusive lock on the entry.
+ *
+ * If nowait is true, it's just a conditional acquire, and the result
+ * *must* be checked to verify success.
+ * If nowait is false, waits as necessary, always returning true.
+ */
 bool
 pgstat_lock_entry(PgStat_EntryRef *entry_ref, bool nowait)
 {
@@ -619,8 +663,10 @@ pgstat_lock_entry(PgStat_EntryRef *entry_ref, bool nowait)
 }
 
 /*
+ * Acquire shared lock on the entry.
+ *
  * Separate from pgstat_lock_entry() as most callers will need to lock
- * exclusively.
+ * exclusively.  The wait semantics are identical.
  */
 bool
 pgstat_lock_entry_shared(PgStat_EntryRef *entry_ref, bool nowait)
@@ -692,7 +738,8 @@ pgstat_gc_entry_refs(void)
 	Assert(curage != 0);
 
 	/*
-	 * Some entries have been dropped. Invalidate cache pointer to them.
+	 * Some entries have been dropped or reinitialized.  Invalidate cache
+	 * pointer to them.
 	 */
 	pgstat_entry_ref_hash_start_iterate(pgStatEntryRefHash, &i);
 	while ((ent = pgstat_entry_ref_hash_iterate(pgStatEntryRefHash, &i)) != NULL)
@@ -702,7 +749,13 @@ pgstat_gc_entry_refs(void)
 		Assert(!entry_ref->shared_stats ||
 			   entry_ref->shared_stats->magic == 0xdeadbeef);
 
-		if (!entry_ref->shared_entry->dropped)
+		/*
+		 * "generation" checks for the case of entries being reinitialized,
+		 * and "dropped" for the case where these are..  dropped.
+		 */
+		if (!entry_ref->shared_entry->dropped &&
+			pg_atomic_read_u32(&entry_ref->shared_entry->generation) ==
+			entry_ref->generation)
 			continue;
 
 		/* cannot gc shared ref that has pending data */
@@ -820,10 +873,10 @@ pgstat_drop_entry_internal(PgStatShared_HashEntry *shent,
 	 */
 	if (shent->dropped)
 		elog(ERROR,
-			 "trying to drop stats entry already dropped: kind=%s dboid=%u objid=%llu refcount=%u",
+			 "trying to drop stats entry already dropped: kind=%s dboid=%u objid=%" PRIu64 " refcount=%u",
 			 pgstat_get_kind_info(shent->key.kind)->name,
 			 shent->key.dboid,
-			 (unsigned long long) shent->key.objid,
+			 shent->key.objid,
 			 pg_atomic_read_u32(&shent->refcount));
 	shent->dropped = true;
 
@@ -908,9 +961,16 @@ pgstat_drop_database_and_contents(Oid dboid)
 bool
 pgstat_drop_entry(PgStat_Kind kind, Oid dboid, uint64 objid)
 {
-	PgStat_HashKey key = {.kind = kind,.dboid = dboid,.objid = objid};
+	PgStat_HashKey key;
 	PgStatShared_HashEntry *shent;
 	bool		freed = true;
+
+	/* clear padding */
+	memset(&key, 0, sizeof(struct PgStat_HashKey));
+
+	key.kind = kind;
+	key.dboid = dboid;
+	key.objid = objid;
 
 	/* delete local reference */
 	if (pgStatEntryRefHash)
@@ -942,18 +1002,38 @@ pgstat_drop_entry(PgStat_Kind kind, Oid dboid, uint64 objid)
 	return freed;
 }
 
+/*
+ * Scan through the shared hashtable of stats, dropping statistics if
+ * approved by the optional do_drop() function.
+ */
 void
-pgstat_drop_all_entries(void)
+pgstat_drop_matching_entries(bool (*do_drop) (PgStatShared_HashEntry *, Datum),
+							 Datum match_data)
 {
 	dshash_seq_status hstat;
 	PgStatShared_HashEntry *ps;
 	uint64		not_freed_count = 0;
 
+	/* entries are removed, take an exclusive lock */
 	dshash_seq_init(&hstat, pgStatLocal.shared_hash, true);
 	while ((ps = dshash_seq_next(&hstat)) != NULL)
 	{
 		if (ps->dropped)
 			continue;
+
+		if (do_drop != NULL && !do_drop(ps, match_data))
+			continue;
+
+		/* delete local reference */
+		if (pgStatEntryRefHash)
+		{
+			PgStat_EntryRefHashEntry *lohashent =
+				pgstat_entry_ref_hash_lookup(pgStatEntryRefHash, ps->key);
+
+			if (lohashent)
+				pgstat_release_entry_ref(lohashent->key, lohashent->entry_ref,
+										 true);
+		}
 
 		if (!pgstat_drop_entry_internal(ps, &hstat))
 			not_freed_count++;
@@ -962,6 +1042,15 @@ pgstat_drop_all_entries(void)
 
 	if (not_freed_count > 0)
 		pgstat_request_entry_refs_gc();
+}
+
+/*
+ * Scan through the shared hashtable of stats and drop all entries.
+ */
+void
+pgstat_drop_all_entries(void)
+{
+	pgstat_drop_matching_entries(NULL, 0);
 }
 
 static void

@@ -3,7 +3,7 @@
  * plsample.c
  *	  Handler for the PL/Sample procedural language
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -21,7 +21,7 @@
 #include "commands/trigger.h"
 #include "executor/spi.h"
 #include "funcapi.h"
-#include "utils/builtins.h"
+#include "utils/fmgrprotos.h"
 #include "utils/lsyscache.h"
 #include "utils/syscache.h"
 

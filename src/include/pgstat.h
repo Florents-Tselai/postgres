@@ -3,7 +3,7 @@
  *
  *	Definitions for the PostgreSQL cumulative statistics system.
  *
- *	Copyright (c) 2001-2024, PostgreSQL Global Development Group
+ *	Copyright (c) 2001-2025, PostgreSQL Global Development Group
  *
  *	src/include/pgstat.h
  * ----------
@@ -11,15 +11,15 @@
 #ifndef PGSTAT_H
 #define PGSTAT_H
 
-#include "access/xlogdefs.h"
 #include "datatype/timestamp.h"
 #include "portability/instr_time.h"
 #include "postmaster/pgarch.h"	/* for MAX_XFN_CHARS */
 #include "replication/conflict.h"
-#include "utils/backend_progress.h" /* for backward compatibility */
-#include "utils/backend_status.h"	/* for backward compatibility */
+#include "utils/backend_progress.h" /* for backward compatibility */	/* IWYU pragma: export */
+#include "utils/backend_status.h"	/* for backward compatibility */	/* IWYU pragma: export */
+#include "utils/pgstat_kind.h"
 #include "utils/relcache.h"
-#include "utils/wait_event.h"	/* for backward compatibility */
+#include "utils/wait_event.h"	/* for backward compatibility */	/* IWYU pragma: export */
 
 
 /* ----------
@@ -32,61 +32,6 @@
 
 /* Default directory to store temporary statistics data in */
 #define PG_STAT_TMP_DIR		"pg_stat_tmp"
-
-/* The types of statistics entries */
-#define PgStat_Kind uint32
-
-/* Range of IDs allowed, for built-in and custom kinds */
-#define PGSTAT_KIND_MIN	1		/* Minimum ID allowed */
-#define PGSTAT_KIND_MAX	256		/* Maximum ID allowed */
-
-/* use 0 for INVALID, to catch zero-initialized data */
-#define PGSTAT_KIND_INVALID 0
-
-/* stats for variable-numbered objects */
-#define PGSTAT_KIND_DATABASE	1	/* database-wide statistics */
-#define PGSTAT_KIND_RELATION	2	/* per-table statistics */
-#define PGSTAT_KIND_FUNCTION	3	/* per-function statistics */
-#define PGSTAT_KIND_REPLSLOT	4	/* per-slot statistics */
-#define PGSTAT_KIND_SUBSCRIPTION	5	/* per-subscription statistics */
-
-/* stats for fixed-numbered objects */
-#define PGSTAT_KIND_ARCHIVER	6
-#define PGSTAT_KIND_BGWRITER	7
-#define PGSTAT_KIND_CHECKPOINTER	8
-#define PGSTAT_KIND_IO	9
-#define PGSTAT_KIND_SLRU	10
-#define PGSTAT_KIND_WAL	11
-
-#define PGSTAT_KIND_BUILTIN_MIN PGSTAT_KIND_DATABASE
-#define PGSTAT_KIND_BUILTIN_MAX PGSTAT_KIND_WAL
-#define PGSTAT_KIND_BUILTIN_SIZE (PGSTAT_KIND_BUILTIN_MAX + 1)
-
-/* Custom stats kinds */
-
-/* Range of IDs allowed for custom stats kinds */
-#define PGSTAT_KIND_CUSTOM_MIN	128
-#define PGSTAT_KIND_CUSTOM_MAX	PGSTAT_KIND_MAX
-#define PGSTAT_KIND_CUSTOM_SIZE	(PGSTAT_KIND_CUSTOM_MAX - PGSTAT_KIND_CUSTOM_MIN + 1)
-
-/*
- * PgStat_Kind to use for extensions that require an ID, but are still in
- * development and have not reserved their own unique kind ID yet. See:
- * https://wiki.postgresql.org/wiki/CustomCumulativeStats
- */
-#define PGSTAT_KIND_EXPERIMENTAL	128
-
-static inline bool
-pgstat_is_kind_builtin(PgStat_Kind kind)
-{
-	return kind >= PGSTAT_KIND_BUILTIN_MIN && kind <= PGSTAT_KIND_BUILTIN_MAX;
-}
-
-static inline bool
-pgstat_is_kind_custom(PgStat_Kind kind)
-{
-	return kind >= PGSTAT_KIND_CUSTOM_MIN && kind <= PGSTAT_KIND_CUSTOM_MAX;
-}
 
 /* Values for track_functions GUC variable --- order is significant! */
 typedef enum TrackFunctionsLevel
@@ -127,9 +72,6 @@ typedef int64 PgStat_Counter;
 
 /* ----------
  * PgStat_FunctionCounts	The actual per-function counts kept by a backend
- *
- * This struct should contain only actual event counters, because we memcmp
- * it against zeroes to detect whether there are any pending stats.
  *
  * Note that the time counters are in instr_time format here.  We convert to
  * microseconds in PgStat_Counter format when flushing out pending statistics.
@@ -172,8 +114,10 @@ typedef struct PgStat_BackendSubEntry
 /* ----------
  * PgStat_TableCounts			The actual per-table counts kept by a backend
  *
- * This struct should contain only actual event counters, because we memcmp
- * it against zeroes to detect whether there are any stats updates to apply.
+ * This struct should contain only actual event counters, because we make use
+ * of pg_memory_is_all_zeros() to detect whether there are any stats updates
+ * to apply.
+ *
  * It is a component of PgStat_TableStatus (within-backend state).
  *
  * Note: for a table, tuples_returned is the number of tuples successfully
@@ -267,7 +211,7 @@ typedef struct PgStat_TableXactStatus
  * ------------------------------------------------------------
  */
 
-#define PGSTAT_FILE_FORMAT_ID	0x01A5BCAF
+#define PGSTAT_FILE_FORMAT_ID	0x01A5BCB7
 
 typedef struct PgStat_ArchiverStats
 {
@@ -282,6 +226,14 @@ typedef struct PgStat_ArchiverStats
 	TimestampTz stat_reset_timestamp;
 } PgStat_ArchiverStats;
 
+/* ---------
+ * PgStat_BgWriterStats			Background Writer statistics
+ *
+ * This struct should contain only actual event counters, because we make use
+ * of pg_memory_is_all_zeros() to detect whether there are any stats updates
+ * to apply.
+ * ---------
+ */
 typedef struct PgStat_BgWriterStats
 {
 	PgStat_Counter buf_written_clean;
@@ -290,16 +242,26 @@ typedef struct PgStat_BgWriterStats
 	TimestampTz stat_reset_timestamp;
 } PgStat_BgWriterStats;
 
+/* --------
+ * PgStat_CheckpointerStats		Checkpoint statistics
+ *
+ * This struct should contain only actual event counters, because we make use
+ * of pg_memory_is_all_zeros() to detect whether there are any stats updates to
+ * apply.
+ * ---------
+ */
 typedef struct PgStat_CheckpointerStats
 {
 	PgStat_Counter num_timed;
 	PgStat_Counter num_requested;
+	PgStat_Counter num_performed;
 	PgStat_Counter restartpoints_timed;
 	PgStat_Counter restartpoints_requested;
 	PgStat_Counter restartpoints_performed;
 	PgStat_Counter write_time;	/* times in milliseconds */
 	PgStat_Counter sync_time;
 	PgStat_Counter buffers_written;
+	PgStat_Counter slru_written;
 	TimestampTz stat_reset_timestamp;
 } PgStat_CheckpointerStats;
 
@@ -311,46 +273,71 @@ typedef enum IOObject
 {
 	IOOBJECT_RELATION,
 	IOOBJECT_TEMP_RELATION,
+	IOOBJECT_WAL,
 } IOObject;
 
-#define IOOBJECT_NUM_TYPES (IOOBJECT_TEMP_RELATION + 1)
+#define IOOBJECT_NUM_TYPES (IOOBJECT_WAL + 1)
 
 typedef enum IOContext
 {
 	IOCONTEXT_BULKREAD,
 	IOCONTEXT_BULKWRITE,
+	IOCONTEXT_INIT,
 	IOCONTEXT_NORMAL,
 	IOCONTEXT_VACUUM,
 } IOContext;
 
 #define IOCONTEXT_NUM_TYPES (IOCONTEXT_VACUUM + 1)
 
+/*
+ * Enumeration of IO operations.
+ *
+ * This enum categorizes IO operations into two groups, depending on if
+ * byte operations are supported.
+ *
+ * Ensure IOOP_EXTEND is the first and IOOP_WRITE is the last ones in the
+ * tracked in bytes group and that the groups stay in that order.
+ */
 typedef enum IOOp
 {
+	/* IOs not tracked in bytes */
 	IOOP_EVICT,
-	IOOP_EXTEND,
 	IOOP_FSYNC,
 	IOOP_HIT,
-	IOOP_READ,
 	IOOP_REUSE,
-	IOOP_WRITE,
 	IOOP_WRITEBACK,
+
+	/* IOs tracked in bytes */
+	IOOP_EXTEND,
+	IOOP_READ,
+	IOOP_WRITE,
 } IOOp;
 
-#define IOOP_NUM_TYPES (IOOP_WRITEBACK + 1)
+#define IOOP_NUM_TYPES (IOOP_WRITE + 1)
+
+#define pgstat_is_ioop_tracked_in_bytes(io_op) \
+	(((unsigned int) (io_op)) < IOOP_NUM_TYPES && \
+	 ((unsigned int) (io_op)) >= IOOP_EXTEND)
 
 typedef struct PgStat_BktypeIO
 {
+	uint64		bytes[IOOBJECT_NUM_TYPES][IOCONTEXT_NUM_TYPES][IOOP_NUM_TYPES];
 	PgStat_Counter counts[IOOBJECT_NUM_TYPES][IOCONTEXT_NUM_TYPES][IOOP_NUM_TYPES];
 	PgStat_Counter times[IOOBJECT_NUM_TYPES][IOCONTEXT_NUM_TYPES][IOOP_NUM_TYPES];
 } PgStat_BktypeIO;
+
+typedef struct PgStat_PendingIO
+{
+	uint64		bytes[IOOBJECT_NUM_TYPES][IOCONTEXT_NUM_TYPES][IOOP_NUM_TYPES];
+	PgStat_Counter counts[IOOBJECT_NUM_TYPES][IOCONTEXT_NUM_TYPES][IOOP_NUM_TYPES];
+	instr_time	pending_times[IOOBJECT_NUM_TYPES][IOCONTEXT_NUM_TYPES][IOOP_NUM_TYPES];
+} PgStat_PendingIO;
 
 typedef struct PgStat_IO
 {
 	TimestampTz stat_reset_timestamp;
 	PgStat_BktypeIO stats[BACKEND_NUM_TYPES];
 } PgStat_IO;
-
 
 typedef struct PgStat_StatDBEntry
 {
@@ -384,6 +371,8 @@ typedef struct PgStat_StatDBEntry
 	PgStat_Counter sessions_abandoned;
 	PgStat_Counter sessions_fatal;
 	PgStat_Counter sessions_killed;
+	PgStat_Counter parallel_workers_to_launch;
+	PgStat_Counter parallel_workers_launched;
 
 	TimestampTz stat_reset_timestamp;
 } PgStat_StatDBEntry;
@@ -459,36 +448,61 @@ typedef struct PgStat_StatTabEntry
 	PgStat_Counter analyze_count;
 	TimestampTz last_autoanalyze_time;	/* autovacuum initiated */
 	PgStat_Counter autoanalyze_count;
+
+	PgStat_Counter total_vacuum_time;	/* times in milliseconds */
+	PgStat_Counter total_autovacuum_time;
+	PgStat_Counter total_analyze_time;
+	PgStat_Counter total_autoanalyze_time;
 } PgStat_StatTabEntry;
 
-typedef struct PgStat_WalStats
+/* ------
+ * PgStat_WalCounters	WAL activity data gathered from WalUsage
+ *
+ * This stores all the counters and data gathered from WalUsage for WAL
+ * activity statistics, separated into its own structure so as this can be
+ * shared across multiple Stats structures.
+ * ------
+ */
+typedef struct PgStat_WalCounters
 {
 	PgStat_Counter wal_records;
 	PgStat_Counter wal_fpi;
 	uint64		wal_bytes;
 	PgStat_Counter wal_buffers_full;
-	PgStat_Counter wal_write;
-	PgStat_Counter wal_sync;
-	PgStat_Counter wal_write_time;
-	PgStat_Counter wal_sync_time;
+} PgStat_WalCounters;
+
+/* -------
+ * PgStat_WalStats		WAL statistics
+ * -------
+ */
+typedef struct PgStat_WalStats
+{
+	PgStat_WalCounters wal_counters;
 	TimestampTz stat_reset_timestamp;
 } PgStat_WalStats;
 
-/*
- * This struct stores wal-related durations as instr_time, which makes it
- * cheaper and easier to accumulate them, by not requiring type
- * conversions. During stats flush instr_time will be converted into
- * microseconds.
+/* -------
+ * PgStat_Backend		Backend statistics
+ * -------
  */
-typedef struct PgStat_PendingWalStats
+typedef struct PgStat_Backend
 {
-	PgStat_Counter wal_buffers_full;
-	PgStat_Counter wal_write;
-	PgStat_Counter wal_sync;
-	instr_time	wal_write_time;
-	instr_time	wal_sync_time;
-} PgStat_PendingWalStats;
+	TimestampTz stat_reset_timestamp;
+	PgStat_BktypeIO io_stats;
+	PgStat_WalCounters wal_counters;
+} PgStat_Backend;
 
+/* ---------
+ * PgStat_BackendPending	Non-flushed backend stats.
+ * ---------
+ */
+typedef struct PgStat_BackendPending
+{
+	/*
+	 * Backend statistics store the same amount of IO data as PGSTAT_KIND_IO.
+	 */
+	PgStat_PendingIO pending_io;
+} PgStat_BackendPending;
 
 /*
  * Functions in pgstat.c
@@ -499,7 +513,7 @@ extern Size StatsShmemSize(void);
 extern void StatsShmemInit(void);
 
 /* Functions called during server startup / shutdown */
-extern void pgstat_restore_stats(XLogRecPtr redo);
+extern void pgstat_restore_stats(void);
 extern void pgstat_discard_stats(void);
 extern void pgstat_before_server_shutdown(int code, Datum arg);
 
@@ -530,6 +544,24 @@ extern bool pgstat_have_entry(PgStat_Kind kind, Oid dboid, uint64 objid);
 extern void pgstat_report_archiver(const char *xlog, bool failed);
 extern PgStat_ArchiverStats *pgstat_fetch_stat_archiver(void);
 
+/*
+ * Functions in pgstat_backend.c
+ */
+
+/* used by pgstat_io.c for I/O stats tracked in backends */
+extern void pgstat_count_backend_io_op_time(IOObject io_object,
+											IOContext io_context,
+											IOOp io_op,
+											instr_time io_time);
+extern void pgstat_count_backend_io_op(IOObject io_object,
+									   IOContext io_context,
+									   IOOp io_op, uint32 cnt,
+									   uint64 bytes);
+extern PgStat_Backend *pgstat_fetch_stat_backend(ProcNumber procNumber);
+extern PgStat_Backend *pgstat_fetch_stat_backend_by_pid(int pid,
+														BackendType *bktype);
+extern bool pgstat_tracks_backend_bktype(BackendType bktype);
+extern void pgstat_create_backend(ProcNumber procnum);
 
 /*
  * Functions in pgstat_bgwriter.c
@@ -553,11 +585,12 @@ extern PgStat_CheckpointerStats *pgstat_fetch_stat_checkpointer(void);
 
 extern bool pgstat_bktype_io_stats_valid(PgStat_BktypeIO *backend_io,
 										 BackendType bktype);
-extern void pgstat_count_io_op(IOObject io_object, IOContext io_context, IOOp io_op);
-extern void pgstat_count_io_op_n(IOObject io_object, IOContext io_context, IOOp io_op, uint32 cnt);
+extern void pgstat_count_io_op(IOObject io_object, IOContext io_context,
+							   IOOp io_op, uint32 cnt, uint64 bytes);
 extern instr_time pgstat_prepare_io_time(bool track_io_guc);
 extern void pgstat_count_io_op_time(IOObject io_object, IOContext io_context,
-									IOOp io_op, instr_time start_time, uint32 cnt);
+									IOOp io_op, instr_time start_time,
+									uint32 cnt, uint64 bytes);
 
 extern PgStat_IO *pgstat_fetch_stat_io(void);
 extern const char *pgstat_get_io_context_name(IOContext io_context);
@@ -578,9 +611,11 @@ extern void pgstat_drop_database(Oid databaseid);
 extern void pgstat_report_autovac(Oid dboid);
 extern void pgstat_report_recovery_conflict(int reason);
 extern void pgstat_report_deadlock(void);
+extern void pgstat_prepare_report_checksum_failure(Oid dboid);
 extern void pgstat_report_checksum_failures_in_db(Oid dboid, int failurecount);
-extern void pgstat_report_checksum_failure(void);
 extern void pgstat_report_connect(Oid dboid);
+extern void pgstat_update_parallel_workers_stats(PgStat_Counter workers_to_launch,
+												 PgStat_Counter workers_launched);
 
 #define pgstat_count_buffer_read_time(n)							\
 	(pgStatBlockReadTime += (n))
@@ -624,10 +659,11 @@ extern void pgstat_assoc_relation(Relation rel);
 extern void pgstat_unlink_relation(Relation rel);
 
 extern void pgstat_report_vacuum(Oid tableoid, bool shared,
-								 PgStat_Counter livetuples, PgStat_Counter deadtuples);
+								 PgStat_Counter livetuples, PgStat_Counter deadtuples,
+								 TimestampTz starttime);
 extern void pgstat_report_analyze(Relation rel,
 								  PgStat_Counter livetuples, PgStat_Counter deadtuples,
-								  bool resetcounter);
+								  bool resetcounter, TimestampTz starttime);
 
 /*
  * If stats are enabled, but pending data hasn't been prepared yet, call
@@ -801,14 +837,5 @@ extern PGDLLIMPORT PgStat_Counter pgStatTransactionIdleTime;
 
 /* updated by the traffic cop and in errfinish() */
 extern PGDLLIMPORT SessionEndType pgStatSessionEndCause;
-
-
-/*
- * Variables in pgstat_wal.c
- */
-
-/* updated directly by backends and background processes */
-extern PGDLLIMPORT PgStat_PendingWalStats PendingWalStats;
-
 
 #endif							/* PGSTAT_H */

@@ -3,7 +3,7 @@
  * walreceiver.h
  *	  Exports from replication/walreceiverfuncs.c.
  *
- * Portions Copyright (c) 2010-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2010-2025, PostgreSQL Global Development Group
  *
  * src/include/replication/walreceiver.h
  *
@@ -21,7 +21,6 @@
 #include "replication/logicalproto.h"
 #include "replication/walsender.h"
 #include "storage/condition_variable.h"
-#include "storage/latch.h"
 #include "storage/spin.h"
 #include "utils/tuplestore.h"
 
@@ -58,13 +57,24 @@ typedef enum
 typedef struct
 {
 	/*
-	 * PID of currently active walreceiver process, its current state and
-	 * start time (actually, the time at which it was requested to be
-	 * started).
+	 * Currently active walreceiver process's proc number and PID.
+	 *
+	 * The startup process uses the proc number to wake it up after telling it
+	 * where to start streaming (after setting receiveStart and
+	 * receiveStartTLI), and also to tell it to send apply feedback to the
+	 * primary whenever specially marked commit records are applied.
 	 */
+	ProcNumber	procno;
 	pid_t		pid;
+
+	/* Its current state */
 	WalRcvState walRcvState;
 	ConditionVariable walRcvStoppedCV;
+
+	/*
+	 * Its start time (actually, the time at which it was requested to be
+	 * started).
+	 */
 	pg_time_t	startTime;
 
 	/*
@@ -133,15 +143,6 @@ typedef struct
 
 	/* set true once conninfo is ready to display (obfuscated pwds etc) */
 	bool		ready_to_display;
-
-	/*
-	 * Latch used by startup process to wake up walreceiver after telling it
-	 * where to start streaming (after setting receiveStart and
-	 * receiveStartTLI), and also to tell it to send apply feedback to the
-	 * primary whenever specially marked commit records are applied. This is
-	 * normally mapped to procLatch when walreceiver is running.
-	 */
-	Latch	   *latch;
 
 	slock_t		mutex;			/* locks shared variables shown above */
 
@@ -485,8 +486,7 @@ walrcv_clear_result(WalRcvExecResult *walres)
 }
 
 /* prototypes for functions in walreceiver.c */
-extern void WalReceiverMain(char *startup_data, size_t startup_data_len) pg_attribute_noreturn();
-extern void ProcessWalRcvInterrupts(void);
+pg_noreturn extern void WalReceiverMain(const void *startup_data, size_t startup_data_len);
 extern void WalRcvForceReply(void);
 
 /* prototypes for functions in walreceiverfuncs.c */

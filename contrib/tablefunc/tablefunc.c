@@ -10,7 +10,7 @@
  * And contributors:
  * Nabil Sayegh <postgresql@e-trolley.de>
  *
- * Copyright (c) 2002-2024, PostgreSQL Global Development Group
+ * Copyright (c) 2002-2025, PostgreSQL Global Development Group
  *
  * Permission to use, copy, modify, and distribute this software and its
  * documentation for any purpose, without fee, and without a written agreement
@@ -38,13 +38,16 @@
 #include "catalog/pg_type.h"
 #include "common/pg_prng.h"
 #include "executor/spi.h"
+#include "fmgr.h"
 #include "funcapi.h"
 #include "lib/stringinfo.h"
 #include "miscadmin.h"
-#include "tablefunc.h"
 #include "utils/builtins.h"
 
-PG_MODULE_MAGIC;
+PG_MODULE_MAGIC_EXT(
+					.name = "tablefunc",
+					.version = PG_VERSION
+);
 
 static HTAB *load_categories_hash(char *cats_sql, MemoryContext per_query_ctx);
 static Tuplestorestate *get_crosstab_tuplestore(char *sql,

@@ -1399,6 +1399,27 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
       <row>
        <entry role="func_table_entry"><para role="func_signature">
         <indexterm>
+         <primary>gamma</primary>
+        </indexterm>
+        <function>gamma</function> ( <type>double precision</type> )
+        <returnvalue>double precision</returnvalue>
+       </para>
+       <para>
+        Gamma function
+       </para>
+       <para>
+        <literal>gamma(0.5)</literal>
+        <returnvalue>1.772453850905516</returnvalue>
+       </para>
+       <para>
+        <literal>gamma(6)</literal>
+        <returnvalue>120</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
          <primary>gcd</primary>
         </indexterm>
         <function>gcd</function> ( <replaceable>numeric_type</replaceable>, <replaceable>numeric_type</replaceable> )
@@ -1433,6 +1454,23 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
        <para>
         <literal>lcm(1071, 462)</literal>
         <returnvalue>23562</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>lgamma</primary>
+        </indexterm>
+        <function>lgamma</function> ( <type>double precision</type> )
+        <returnvalue>double precision</returnvalue>
+       </para>
+       <para>
+        Natural logarithm of the absolute value of the gamma function
+       </para>
+       <para>
+        <literal>lgamma(1000)</literal>
+        <returnvalue>5905.220423209181</returnvalue>
        </para></entry>
       </row>
 
@@ -2596,7 +2634,7 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
 
       <row>
        <entry role="func_table_entry"><para role="func_signature">
-        <indexterm>
+        <indexterm id="function-lower">
          <primary>lower</primary>
         </indexterm>
         <function>lower</function> ( <type>text</type> )
@@ -2657,7 +2695,7 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
 
       <row>
        <entry role="func_table_entry"><para role="func_signature">
-        <indexterm>
+        <indexterm id="function-normalize">
          <primary>normalize</primary>
         </indexterm>
         <indexterm>
@@ -3036,7 +3074,7 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
          <primary>concat</primary>
         </indexterm>
         <function>concat</function> ( <parameter>val1</parameter> <type>"any"</type>
-         [, <parameter>val2</parameter> <type>"any"</type> [, ...] ] )
+         <optional>, <parameter>val2</parameter> <type>"any"</type> <optional>, ...</optional> </optional> )
         <returnvalue>text</returnvalue>
        </para>
        <para>
@@ -3056,7 +3094,7 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
         </indexterm>
         <function>concat_ws</function> ( <parameter>sep</parameter> <type>text</type>,
         <parameter>val1</parameter> <type>"any"</type>
-        [, <parameter>val2</parameter> <type>"any"</type> [, ...] ] )
+        <optional>, <parameter>val2</parameter> <type>"any"</type> <optional>, ...</optional> </optional> )
         <returnvalue>text</returnvalue>
        </para>
        <para>
@@ -3076,7 +3114,7 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
          <primary>format</primary>
         </indexterm>
         <function>format</function> ( <parameter>formatstr</parameter> <type>text</type>
-        [, <parameter>formatarg</parameter> <type>"any"</type> [, ...] ] )
+        <optional>, <parameter>formatarg</parameter> <type>"any"</type> <optional>, ...</optional> </optional> )
         <returnvalue>text</returnvalue>
        </para>
        <para>
@@ -3106,6 +3144,44 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
        <para>
         <literal>initcap('hi THOMAS')</literal>
         <returnvalue>Hi Thomas</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>casefold</primary>
+        </indexterm>
+        <function>casefold</function> ( <type>text</type> )
+        <returnvalue>text</returnvalue>
+       </para>
+       <para>
+        Performs case folding of the input string according to the collation.
+        Case folding is similar to case conversion, but the purpose of case
+        folding is to facilitate case-insensitive matching of strings,
+        whereas the purpose of case conversion is to convert to a particular
+        cased form.  This function can only be used when the server encoding
+        is <literal>UTF8</literal>.
+       </para>
+       <para>
+        Ordinarily, case folding simply converts to lowercase, but there may
+        be exceptions depending on the collation.  For instance, some
+        characters have more than two lowercase variants, or fold to uppercase.
+       </para>
+       <para>
+        Case folding may change the length of the string.  For instance, in
+        the <literal>PG_UNICODE_FAST</literal> collation, <literal>ß</literal>
+        (U+00DF) folds to <literal>ss</literal>.
+       </para>
+       <para>
+        <function>casefold</function> can be used for Unicode Default Caseless
+        Matching.  It does not always preserve the normalized form of the
+        input string (see <xref linkend="function-normalize"/>).
+       </para>
+       <para>
+        The <literal>libc</literal> provider doesn't support case folding, so
+        <function>casefold</function> is identical to <xref
+        linkend="function-lower"/>.
        </para></entry>
       </row>
 
@@ -3170,7 +3246,7 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
          <primary>parse_ident</primary>
         </indexterm>
         <function>parse_ident</function> ( <parameter>qualified_identifier</parameter> <type>text</type>
-        [, <parameter>strict_mode</parameter> <type>boolean</type> <literal>DEFAULT</literal> <literal>true</literal> ] )
+        <optional>, <parameter>strict_mode</parameter> <type>boolean</type> <literal>DEFAULT</literal> <literal>true</literal> </optional> )
         <returnvalue>text[]</returnvalue>
        </para>
        <para>
@@ -3309,8 +3385,8 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
          <primary>regexp_count</primary>
         </indexterm>
         <function>regexp_count</function> ( <parameter>string</parameter> <type>text</type>, <parameter>pattern</parameter> <type>text</type>
-         [, <parameter>start</parameter> <type>integer</type>
-         [, <parameter>flags</parameter> <type>text</type> ] ] )
+         <optional>, <parameter>start</parameter> <type>integer</type>
+         <optional>, <parameter>flags</parameter> <type>text</type> </optional> </optional> )
         <returnvalue>integer</returnvalue>
        </para>
        <para>
@@ -3331,11 +3407,11 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
          <primary>regexp_instr</primary>
         </indexterm>
         <function>regexp_instr</function> ( <parameter>string</parameter> <type>text</type>, <parameter>pattern</parameter> <type>text</type>
-         [, <parameter>start</parameter> <type>integer</type>
-         [, <parameter>N</parameter> <type>integer</type>
-         [, <parameter>endoption</parameter> <type>integer</type>
-         [, <parameter>flags</parameter> <type>text</type>
-         [, <parameter>subexpr</parameter> <type>integer</type> ] ] ] ] ] )
+         <optional>, <parameter>start</parameter> <type>integer</type>
+         <optional>, <parameter>N</parameter> <type>integer</type>
+         <optional>, <parameter>endoption</parameter> <type>integer</type>
+         <optional>, <parameter>flags</parameter> <type>text</type>
+         <optional>, <parameter>subexpr</parameter> <type>integer</type> </optional> </optional> </optional> </optional> </optional> )
         <returnvalue>integer</returnvalue>
        </para>
        <para>
@@ -3360,7 +3436,7 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
          <primary>regexp_like</primary>
         </indexterm>
         <function>regexp_like</function> ( <parameter>string</parameter> <type>text</type>, <parameter>pattern</parameter> <type>text</type>
-         [, <parameter>flags</parameter> <type>text</type> ] )
+         <optional>, <parameter>flags</parameter> <type>text</type> </optional> )
         <returnvalue>boolean</returnvalue>
        </para>
        <para>
@@ -3380,7 +3456,7 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
         <indexterm>
          <primary>regexp_match</primary>
         </indexterm>
-        <function>regexp_match</function> ( <parameter>string</parameter> <type>text</type>, <parameter>pattern</parameter> <type>text</type> [, <parameter>flags</parameter> <type>text</type> ] )
+        <function>regexp_match</function> ( <parameter>string</parameter> <type>text</type>, <parameter>pattern</parameter> <type>text</type> <optional>, <parameter>flags</parameter> <type>text</type> </optional> )
         <returnvalue>text[]</returnvalue>
        </para>
        <para>
@@ -3400,7 +3476,7 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
         <indexterm>
          <primary>regexp_matches</primary>
         </indexterm>
-        <function>regexp_matches</function> ( <parameter>string</parameter> <type>text</type>, <parameter>pattern</parameter> <type>text</type> [, <parameter>flags</parameter> <type>text</type> ] )
+        <function>regexp_matches</function> ( <parameter>string</parameter> <type>text</type>, <parameter>pattern</parameter> <type>text</type> <optional>, <parameter>flags</parameter> <type>text</type> </optional> )
         <returnvalue>setof text[]</returnvalue>
        </para>
        <para>
@@ -3473,7 +3549,7 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
         <indexterm>
          <primary>regexp_split_to_array</primary>
         </indexterm>
-        <function>regexp_split_to_array</function> ( <parameter>string</parameter> <type>text</type>, <parameter>pattern</parameter> <type>text</type> [, <parameter>flags</parameter> <type>text</type> ] )
+        <function>regexp_split_to_array</function> ( <parameter>string</parameter> <type>text</type>, <parameter>pattern</parameter> <type>text</type> <optional>, <parameter>flags</parameter> <type>text</type> </optional> )
         <returnvalue>text[]</returnvalue>
        </para>
        <para>
@@ -3492,7 +3568,7 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
         <indexterm>
          <primary>regexp_split_to_table</primary>
         </indexterm>
-        <function>regexp_split_to_table</function> ( <parameter>string</parameter> <type>text</type>, <parameter>pattern</parameter> <type>text</type> [, <parameter>flags</parameter> <type>text</type> ] )
+        <function>regexp_split_to_table</function> ( <parameter>string</parameter> <type>text</type>, <parameter>pattern</parameter> <type>text</type> <optional>, <parameter>flags</parameter> <type>text</type> </optional> )
         <returnvalue>setof text</returnvalue>
        </para>
        <para>
@@ -3516,10 +3592,10 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
          <primary>regexp_substr</primary>
         </indexterm>
         <function>regexp_substr</function> ( <parameter>string</parameter> <type>text</type>, <parameter>pattern</parameter> <type>text</type>
-         [, <parameter>start</parameter> <type>integer</type>
-         [, <parameter>N</parameter> <type>integer</type>
-         [, <parameter>flags</parameter> <type>text</type>
-         [, <parameter>subexpr</parameter> <type>integer</type> ] ] ] ] )
+         <optional>, <parameter>start</parameter> <type>integer</type>
+         <optional>, <parameter>N</parameter> <type>integer</type>
+         <optional>, <parameter>flags</parameter> <type>text</type>
+         <optional>, <parameter>subexpr</parameter> <type>integer</type> </optional> </optional> </optional> </optional> )
         <returnvalue>text</returnvalue>
        </para>
        <para>
@@ -3986,7 +4062,7 @@ SELECT NOT(ROW(table.*) IS NOT NULL) FROM TABLE; -- detect at least one null in 
 
     <para>
 <synopsis>
-<function>format</function>(<parameter>formatstr</parameter> <type>text</type> [, <parameter>formatarg</parameter> <type>"any"</type> [, ...] ])
+<function>format</function>(<parameter>formatstr</parameter> <type>text</type> <optional>, <parameter>formatarg</parameter> <type>"any"</type> <optional>, ...</optional> </optional>)
 </synopsis>
      <parameter>formatstr</parameter> is a format string that specifies how the
      result should be formatted.  Text in the format string is copied
@@ -4625,6 +4701,23 @@ SELECT format('Testing %3$s, %2$s, %s', 'one', 'two', 'three');
       <row>
        <entry role="func_table_entry"><para role="func_signature">
         <indexterm>
+         <primary>reverse</primary>
+        </indexterm>
+        <function>reverse</function> ( <type>bytea</type> )
+        <returnvalue>bytea</returnvalue>
+       </para>
+       <para>
+        Reverses the order of the bytes in the binary string.
+       </para>
+       <para>
+        <literal>reverse('\xabcd'::bytea)</literal>
+        <returnvalue>\xcdab</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
          <primary>set_bit</primary>
         </indexterm>
         <function>set_bit</function> ( <parameter>bytes</parameter> <type>bytea</type>,
@@ -4995,6 +5088,23 @@ SELECT format('Testing %3$s, %2$s, %s', 'one', 'two', 'three');
      </listitem>
     </varlistentry>
    </variablelist>
+  </para>
+
+  <para>
+   In addition, it is possible to cast integral values to and from type
+   <type>bytea</type>. Casting an integer to <type>bytea</type> produces
+   2, 4, or 8 bytes, depending on the width of the integer type. The result
+   is the two's complement representation of the integer, with the most
+   significant byte first. Some examples:
+<programlisting>
+1234::smallint::bytea          <lineannotation>\x04d2</lineannotation>
+cast(1234 as bytea)            <lineannotation>\x000004d2</lineannotation>
+cast(-1234 as bytea)           <lineannotation>\xfffffb2e</lineannotation>
+'\x8000'::bytea::smallint      <lineannotation>-32768</lineannotation>
+'\x8000'::bytea::integer       <lineannotation>32768</lineannotation>
+</programlisting>
+   Casting a <type>bytea</type> to an integer will raise an error if the
+   length of the <type>bytea</type> exceeds the width of the integer type.
   </para>
 
   <para>
@@ -5414,9 +5524,10 @@ cast(-44 as bit(12))           <lineannotation>111111010100</lineannotation>
    </caution>
 
    <para>
-    The pattern matching operators of all three kinds do not support
-    nondeterministic collations.  If required, apply a different collation to
-    the expression to work around this limitation.
+    <function>SIMILAR TO</function> and <acronym>POSIX</acronym>-style regular
+    expressions do not support nondeterministic collations.  If required, use
+    <function>LIKE</function> or apply a different collation to the expression
+    to work around this limitation.
    </para>
 
   <sect2 id="functions-like">
@@ -5463,6 +5574,46 @@ cast(-44 as bit(12))           <lineannotation>111111010100</lineannotation>
    </para>
 
    <para>
+    <function>LIKE</function> pattern matching supports nondeterministic
+    collations (see <xref linkend="collation-nondeterministic"/>), such as
+    case-insensitive collations or collations that, say, ignore punctuation.
+    So with a case-insensitive collation, one could have:
+<programlisting>
+'AbC' LIKE 'abc' COLLATE case_insensitive    <lineannotation>true</lineannotation>
+'AbC' LIKE 'a%' COLLATE case_insensitive     <lineannotation>true</lineannotation>
+</programlisting>
+    With collations that ignore certain characters or in general that consider
+    strings of different lengths equal, the semantics can become a bit more
+    complicated.  Consider these examples:
+<programlisting>
+'.foo.' LIKE 'foo' COLLATE ign_punct    <lineannotation>true</lineannotation>
+'.foo.' LIKE 'f_o' COLLATE ign_punct    <lineannotation>true</lineannotation>
+'.foo.' LIKE '_oo' COLLATE ign_punct    <lineannotation>false</lineannotation>
+</programlisting>
+    The way the matching works is that the pattern is partitioned into
+    sequences of wildcards and non-wildcard strings (wildcards being
+    <literal>_</literal> and <literal>%</literal>).  For example, the pattern
+    <literal>f_o</literal> is partitioned into <literal>f, _, o</literal>, the
+    pattern <literal>_oo</literal> is partitioned into <literal>_,
+    oo</literal>.  The input string matches the pattern if it can be
+    partitioned in such a way that the wildcards match one character or any
+    number of characters respectively and the non-wildcard partitions are
+    equal under the applicable collation.  So for example, <literal>'.foo.'
+    LIKE 'f_o' COLLATE ign_punct</literal> is true because one can partition
+    <literal>.foo.</literal> into <literal>.f, o, o.</literal>, and then
+    <literal>'.f' = 'f' COLLATE ign_punct</literal>, <literal>'o'</literal>
+    matches the <literal>_</literal> wildcard, and <literal>'o.' = 'o' COLLATE
+    ign_punct</literal>.  But <literal>'.foo.' LIKE '_oo' COLLATE
+    ign_punct</literal> is false because <literal>.foo.</literal> cannot be
+    partitioned in a way that the first character is any character and the
+    rest of the string compares equal to <literal>oo</literal>.  (Note that
+    the single-character wildcard always matches exactly one character,
+    independent of the collation.  So in this example, the
+    <literal>_</literal> would match <literal>.</literal>, but then the rest
+    of the input string won't match the rest of the pattern.)
+   </para>
+
+   <para>
     <function>LIKE</function> pattern matching always covers the entire
     string.  Therefore, if it's desired to match a sequence anywhere within
     a string, the pattern must start and end with a percent sign.
@@ -5503,8 +5654,9 @@ cast(-44 as bit(12))           <lineannotation>111111010100</lineannotation>
 
    <para>
     The key word <token>ILIKE</token> can be used instead of
-    <token>LIKE</token> to make the match case-insensitive according
-    to the active locale.  This is not in the <acronym>SQL</acronym> standard but is a
+    <token>LIKE</token> to make the match case-insensitive according to the
+    active locale.  (But this does not support nondeterministic collations.)
+    This is not in the <acronym>SQL</acronym> standard but is a
     <productname>PostgreSQL</productname> extension.
    </para>
 
@@ -8627,8 +8779,8 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
         <entry>plus/minus sign in specified position</entry>
        </row>
        <row>
-        <entry><literal>RN</literal></entry>
-        <entry>Roman numeral (input between 1 and 3999)</entry>
+        <entry><literal>RN</literal> or <literal>rn</literal></entry>
+        <entry>Roman numeral (values between 1 and 3999)</entry>
        </row>
        <row>
         <entry><literal>TH</literal> or <literal>th</literal></entry>
@@ -8739,6 +8891,8 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
        <replaceable>n</replaceable> is the number of digits following
        <literal>V</literal>.  <literal>V</literal> with
        <function>to_number</function> divides in a similar manner.
+       The <literal>V</literal> can be thought of as marking the position
+       of an implicit decimal point in the input or output string.
        <function>to_char</function> and <function>to_number</function>
        do not support the use of
        <literal>V</literal> combined with a decimal point
@@ -8752,6 +8906,19 @@ SELECT regexp_match('abc01234xyz', '(?:(.*?)(\d+)(.*)){1,1}');
        combination with any of the other formatting patterns or
        modifiers other than digit and decimal point patterns, and must be at the end of the format string
        (e.g., <literal>9.99EEEE</literal> is a valid pattern).
+      </para>
+     </listitem>
+
+     <listitem>
+      <para>
+       In <function>to_number()</function>, the <literal>RN</literal>
+       pattern converts Roman numerals (in standard form) to numbers.
+       Input is case-insensitive, so <literal>RN</literal>
+       and <literal>rn</literal> are equivalent.  <literal>RN</literal>
+       cannot be used in combination with any other formatting patterns or
+       modifiers except <literal>FM</literal>, which is applicable only
+       in <function>to_char()</function> and is ignored
+       in <function>to_number()</function>.
       </para>
      </listitem>
     </itemizedlist>
@@ -10619,7 +10786,7 @@ SELECT date_part('hour', INTERVAL '4 hours 3 minutes');
 
    <para>
 <synopsis>
-date_trunc(<replaceable>field</replaceable>, <replaceable>source</replaceable> [, <replaceable>time_zone</replaceable> ])
+date_trunc(<replaceable>field</replaceable>, <replaceable>source</replaceable> <optional>, <replaceable>time_zone</replaceable> </optional>)
 </synopsis>
     <replaceable>source</replaceable> is a value expression of type
     <type>timestamp</type>, <type>timestamp with time zone</type>,
@@ -10738,7 +10905,7 @@ SELECT date_bin('15 minutes', TIMESTAMP '2020-02-11 15:44:17', TIMESTAMP '2001-0
   </sect2>
 
   <sect2 id="functions-datetime-zoneconvert">
-   <title><literal>AT TIME ZONE and AT LOCAL</literal></title>
+   <title><literal>AT TIME ZONE</literal> and <literal>AT LOCAL</literal></title>
 
    <indexterm>
     <primary>time zone</primary>
@@ -10911,6 +11078,8 @@ SELECT TIMESTAMP '2001-02-16 20:38:40' AT TIME ZONE 'Asia/Tokyo' AT TIME ZONE 'A
 <lineannotation>Result: </lineannotation><computeroutput>2001-02-16 05:38:40</computeroutput>
 SELECT TIMESTAMP WITH TIME ZONE '2001-02-16 20:38:40-05' AT LOCAL;
 <lineannotation>Result: </lineannotation><computeroutput>2001-02-16 17:38:40</computeroutput>
+SELECT TIMESTAMP WITH TIME ZONE '2001-02-16 20:38:40-05' AT TIME ZONE '+05';
+<lineannotation>Result: </lineannotation><computeroutput>2001-02-16 20:38:40</computeroutput>
 SELECT TIME WITH TIME ZONE '20:38:40-05' AT LOCAL;
 <lineannotation>Result: </lineannotation><computeroutput>17:38:40</computeroutput>
 </screen>
@@ -10923,11 +11092,14 @@ SELECT TIME WITH TIME ZONE '20:38:40-05' AT LOCAL;
     Tokyo time to Chicago time.  The fourth example shifts the time stamp
     with time zone value to the time zone currently specified by the
     <varname>TimeZone</varname> setting and returns the value without a
-    time zone.
+    time zone.  The fifth example demonstrates that the sign in a POSIX-style
+    time zone specification has the opposite meaning of the sign in an
+    ISO-8601 datetime literal, as described in <xref linkend="datatype-timezones"/>
+    and <xref linkend="datetime-appendix"/>.
    </para>
 
    <para>
-    The fifth example is a cautionary tale. Due to the fact that there is no
+    The sixth example is a cautionary tale. Due to the fact that there is no
     date associated with the input value, the conversion is made using the
     current date of the session. Therefore, this static example may show a wrong
     result depending on the time of the year it is viewed because
@@ -14212,6 +14384,14 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
   </indexterm>
 
   <indexterm>
+   <primary>uuidv4</primary>
+  </indexterm>
+
+  <indexterm>
+   <primary>uuidv7</primary>
+  </indexterm>
+
+  <indexterm>
    <primary>uuid_extract_timestamp</primary>
   </indexterm>
 
@@ -14220,45 +14400,163 @@ CREATE TYPE rainbow AS ENUM ('red', 'orange', 'yellow', 'green', 'blue', 'purple
   </indexterm>
 
   <para>
-   <productname>PostgreSQL</productname> includes one function to generate a UUID:
-<synopsis>
-<function>gen_random_uuid</function> () <returnvalue>uuid</returnvalue>
-</synopsis>
-   This function returns a version 4 (random) UUID.  This is the most commonly
-   used type of UUID and is appropriate for most applications.
+   <xref linkend="func_uuid_gen_table"/> shows the <productname>PostgreSQL</productname>
+   functions that can be used to generate UUIDs.
   </para>
 
-  <para>
-   The <xref linkend="uuid-ossp"/> module provides additional functions that
-   implement other standard algorithms for generating UUIDs.
-  </para>
+  <table id="func_uuid_gen_table">
+   <title><acronym>UUID</acronym> Generation Functions</title>
+   <tgroup cols="1">
+    <thead>
+     <row>
+      <entry role="func_table_entry">
+       <para role="func_signature">
+        Function
+       </para>
+       <para>
+        Description
+        </para>
+       <para>
+        Example(s)
+       </para>
+       </entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry role="func_table_entry">
+       <para role="func_signature">
+        <type>gen_random_uuid</type>
+        <returnvalue>uuid</returnvalue>
+       </para>
+       <para role="func_signature">
+        <type>uuidv4</type>
+        <returnvalue>uuid</returnvalue>
+       </para>
+       <para>
+         Generate a version 4 (random) UUID.
+       </para>
+       <para>
+        <literal>gen_random_uuid()</literal>
+        <returnvalue>5b30857f-0bfa-48b5-ac0b-5c64e28078d1</returnvalue>
+       </para>
+       <para>
+        <literal>uuidv4()</literal>
+        <returnvalue>b42410ee-132f-42ee-9e4f-09a6485c95b8</returnvalue>
+       </para>
+      </entry>
+     </row>
+     <row>
+      <entry role="func_table_entry">
+       <para role="func_signature">
+        <type>uuidv7</type>
+        ( <optional> <parameter>shift</parameter> <type>interval</type> </optional> )
+        <returnvalue>uuid</returnvalue>
+       </para>
+       <para>
+        Generate a version 7 (time-ordered) UUID. The timestamp is computed using UNIX timestamp
+        with millisecond precision + sub-millisecond timestamp + random. The optional parameter
+        <parameter>shift</parameter> will shift the computed timestamp by the given <type>interval</type>.
+       </para>
+       <para>
+        <literal>uuidv7()</literal>
+        <returnvalue>019535d9-3df7-79fb-b466-fa907fa17f9e</returnvalue>
+       </para>
+      </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
+
+  <note>
+   <para>
+    The <xref linkend="uuid-ossp"/> module provides additional functions that
+    implement other standard algorithms for generating UUIDs.
+   </para>
+  </note>
 
   <para>
-   There are also functions to extract data from UUIDs:
-<synopsis>
-<function>uuid_extract_timestamp</function> (uuid) <returnvalue>timestamp with time zone</returnvalue>
-</synopsis>
-   This function extracts a <type>timestamp with time zone</type> from UUID
-   version 1.  For other versions, this function returns null.  Note that the
-   extracted timestamp is not necessarily exactly equal to the time the UUID
-   was generated; this depends on the implementation that generated the UUID.
+   <xref linkend="func_uuid_extract_table"/> shows the <productname>PostgreSQL</productname>
+   functions that can be used to extract information from UUIDs.
   </para>
 
-  <para>
-<synopsis>
-<function>uuid_extract_version</function> (uuid) <returnvalue>smallint</returnvalue>
-</synopsis>
-   This function extracts the version from a UUID of the variant described by
-   <ulink url="https://datatracker.ietf.org/doc/html/rfc4122">RFC 4122</ulink>.  For
-   other variants, this function returns null.  For example, for a UUID
-   generated by <function>gen_random_uuid</function>, this function will
-   return 4.
-  </para>
+  <table id="func_uuid_extract_table">
+   <title><acronym>UUID</acronym> Extraction Functions</title>
+   <tgroup cols="1">
+    <thead>
+     <row>
+      <entry role="func_table_entry">
+       <para role="func_signature">
+        Function
+       </para>
+       <para>
+        Description
+       </para>
+       <para>
+        Example(s)
+       </para>
+      </entry>
+     </row>
+    </thead>
+
+    <tbody>
+     <row>
+      <entry role="func_table_entry">
+       <para role="func_signature">
+        <type>uuid_extract_timestamp</type>
+        ( <type>uuid</type> )
+        <returnvalue>timestamp with time zone</returnvalue>
+       </para>
+       <para>
+        Extracts a <type>timestamp with time zone</type> from UUID
+        version 1 and 7.  For other versions, this function returns null.  Note that
+        the extracted timestamp is not necessarily exactly equal to the time the
+        UUID was generated; this depends on the implementation that generated the
+        UUID.
+       </para>
+       <para>
+        <literal>uuid_extract_timestamp('019535d9-3df7-79fb-b466-&zwsp;fa907fa17f9e'::uuid)</literal>
+         <returnvalue>2025-02-23 21:46:24.503-05</returnvalue>
+       </para>
+      </entry>
+     </row>
+     <row>
+      <entry role="func_table_entry">
+       <para role="func_signature">
+        <type>uuid_extract_version</type>
+        ( <type>uuid</type> )
+        <returnvalue>smallint</returnvalue>
+       </para>
+       <para>
+        Extracts the version from a UUID of the variant described by
+        <ulink url="https://datatracker.ietf.org/doc/html/rfc9562">RFC 9562</ulink>.  For
+        other variants, this function returns null.  For example, for a UUID
+        generated by <function>gen_random_uuid</function>, this function will
+        return 4.
+       </para>
+       <para>
+        <literal>uuid_extract_version('41db1265-8bc1-4ab3-992f-&zwsp;885799a4af1d'::uuid)</literal>
+        <returnvalue>4</returnvalue>
+       </para>
+       <para>
+        <literal>uuid_extract_version('019535d9-3df7-79fb-b466-&zwsp;fa907fa17f9e'::uuid)</literal>
+        <returnvalue>7</returnvalue>
+       </para>
+      </entry>
+     </row>
+    </tbody>
+   </tgroup>
+  </table>
 
   <para>
    <productname>PostgreSQL</productname> also provides the usual comparison
    operators shown in <xref linkend="functions-comparison-op-table"/> for
    UUIDs.
+  </para>
+  <para>
+   See <xref linkend="datatype-uuid"/> for details on the data type
+   <type>uuid</type> in <productname>PostgreSQL</productname>.
   </para>
  </sect1>
 
@@ -17119,25 +17417,32 @@ ERROR:  value too long for type character(2)
         <indexterm>
          <primary>json_strip_nulls</primary>
         </indexterm>
-        <function>json_strip_nulls</function> ( <type>json</type> )
+        <function>json_strip_nulls</function> ( <parameter>target</parameter> <type>json</type> <optional>,<parameter>strip_in_arrays</parameter> <type>boolean</type> </optional> )
         <returnvalue>json</returnvalue>
        </para>
        <para role="func_signature">
         <indexterm>
          <primary>jsonb_strip_nulls</primary>
         </indexterm>
-        <function>jsonb_strip_nulls</function> ( <type>jsonb</type> )
+        <function>jsonb_strip_nulls</function> ( <parameter>target</parameter> <type>jsonb</type> <optional>,<parameter>strip_in_arrays</parameter> <type>boolean</type> </optional> )
         <returnvalue>jsonb</returnvalue>
        </para>
        <para>
         Deletes all object fields that have null values from the given JSON
-        value, recursively.  Null values that are not object fields are
-        untouched.
+        value, recursively.
+        If <parameter>strip_in_arrays</parameter> is true (the default is false),
+        null array elements are also stripped.
+        Otherwise they are not stripped. Bare null values are never stripped.
        </para>
        <para>
         <literal>json_strip_nulls('[{"f1":1, "f2":null}, 2, null, 3]')</literal>
         <returnvalue>[{"f1":1},2,null,3]</returnvalue>
-       </para></entry>
+       </para>
+       <para>
+        <literal>jsonb_strip_nulls('[1,2,null,3,4]', true);</literal>
+        <returnvalue>[1,2,3,4]</returnvalue>
+       </para>
+       </entry>
       </row>
 
       <row>
@@ -17176,8 +17481,8 @@ ERROR:  value too long for type character(2)
         <returnvalue>boolean</returnvalue>
        </para>
        <para>
-        Returns the result of a JSON path predicate check for the specified
-        JSON value.
+        Returns the SQL boolean result of a JSON path predicate check
+        for the specified JSON value.
         (This is useful only
         with <link linkend="functions-sqljson-check-expressions">predicate
         check expressions</link>, not SQL-standard JSON path expressions,
@@ -17644,9 +17949,9 @@ SELECT '{
      Boolean predicate, whereas the SQL standard allows predicates only within
      filters. While SQL-standard path expressions return the relevant
      element(s) of the queried JSON value, predicate check expressions
-     return the single three-valued result of the
+     return the single three-valued <type>jsonb</type> result of the
      predicate: <literal>true</literal>,
-     <literal>false</literal>, or <literal>unknown</literal>.
+     <literal>false</literal>, or <literal>null</literal>.
      For example, we could write this SQL-standard filter expression:
 <screen>
 <prompt>=&gt;</prompt> <userinput>select jsonb_path_query(:'json', '$.track.segments ?(@[*].HR &gt; 130)');</userinput>
@@ -19359,7 +19664,7 @@ SELECT jt.* FROM
 SELECT jt.* FROM
  my_films,
  JSON_TABLE (js, '$.favorites[*] ? (@.films[*].director == $filter)'
-   PASSING 'Alfred Hitchcock' AS filter, 'Vertigo' AS filter2
+   PASSING 'Alfred Hitchcock' AS filter
      COLUMNS (
      id FOR ORDINALITY,
      kind text PATH '$.kind',
@@ -19446,13 +19751,13 @@ SELECT jt.* FROM
 <programlisting>
 SELECT * FROM JSON_TABLE (
 '{"favorites":
-    {"movies":
+    [{"movies":
       [{"name": "One", "director": "John Doe"},
        {"name": "Two", "director": "Don Joe"}],
      "books":
       [{"name": "Mystery", "authors": [{"name": "Brown Dan"}]},
        {"name": "Wonder", "authors": [{"name": "Jun Murakami"}, {"name":"Craig Doe"}]}]
-}}'::json, '$.favorites[*]'
+}]}'::json, '$.favorites[*]'
 COLUMNS (
   user_id FOR ORDINALITY,
   NESTED '$.movies[*]'
@@ -20380,6 +20685,23 @@ SELECT NULLIF(value, '(none)') ...
       <row>
        <entry role="func_table_entry"><para role="func_signature">
         <indexterm>
+         <primary>array_reverse</primary>
+        </indexterm>
+        <function>array_reverse</function> ( <type>anyarray</type> )
+        <returnvalue>anyarray</returnvalue>
+       </para>
+       <para>
+        Reverses the first dimension of the array.
+       </para>
+       <para>
+        <literal>array_reverse(ARRAY[[1,2],[3,4],[5,6]])</literal>
+        <returnvalue>{{5,6},{3,4},{1,2}}</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
          <primary>array_sample</primary>
         </indexterm>
         <function>array_sample</function> ( <parameter>array</parameter> <type>anyarray</type>, <parameter>n</parameter> <type>integer</type> )
@@ -20416,6 +20738,42 @@ SELECT NULLIF(value, '(none)') ...
        <para>
         <literal>array_shuffle(ARRAY[[1,2],[3,4],[5,6]])</literal>
         <returnvalue>{{5,6},{1,2},{3,4}}</returnvalue>
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>array_sort</primary>
+        </indexterm>
+        <function>array_sort</function> (
+          <parameter>array</parameter> <type>anyarray</type>
+          <optional>, <parameter>descending</parameter> <type>boolean</type>
+          <optional>, <parameter>nulls_first</parameter> <type>boolean</type>
+          </optional></optional> )
+        <returnvalue>anyarray</returnvalue>
+       </para>
+       <para>
+        Sorts the first dimension of the array.
+        The sort order is determined by the default sort ordering of the
+        array's element type; however, if the element type is collatable,
+        the collation to use can be specified by adding
+        a <literal>COLLATE</literal> clause to
+        the <parameter>array</parameter> argument.
+       </para>
+       <para>
+        If <parameter>descending</parameter> is true then sort in
+        descending order, otherwise ascending order.  If omitted, the
+        default is ascending order.
+        If <parameter>nulls_first</parameter> is true then nulls appear
+        before non-null values, otherwise nulls appear after non-null
+        values.
+        If omitted, <parameter>nulls_first</parameter> is taken to have
+        the same value as <parameter>descending</parameter>.
+       </para>
+       <para>
+        <literal>array_sort(ARRAY[[2,4],[2,1],[6,5]])</literal>
+        <returnvalue>{{2,1},{2,4},{6,5}}</returnvalue>
        </para></entry>
       </row>
 
@@ -21435,7 +21793,7 @@ SELECT NULLIF(value, '(none)') ...
        </para>
        <para>
         Extracts the lower bound of the multirange (<literal>NULL</literal> if the
-        multirange is empty has no lower bound).
+        multirange is empty or has no lower bound).
        </para>
        <para>
         <literal>lower('{[1.1,2.2)}'::nummultirange)</literal>
@@ -22123,7 +22481,7 @@ SELECT NULLIF(value, '(none)') ...
        <para>
         Computes the maximum of the non-null input
         values.  Available for any numeric, string, date/time, or enum type,
-        as well as <type>inet</type>, <type>interval</type>,
+        as well as <type>bytea</type>, <type>inet</type>, <type>interval</type>,
         <type>money</type>, <type>oid</type>, <type>pg_lsn</type>,
         <type>tid</type>, <type>xid8</type>,
         and also arrays and composite types containing sortable data types.
@@ -22142,7 +22500,7 @@ SELECT NULLIF(value, '(none)') ...
        <para>
         Computes the minimum of the non-null input
         values.  Available for any numeric, string, date/time, or enum type,
-        as well as <type>inet</type>, <type>interval</type>,
+        as well as <type>bytea</type>, <type>inet</type>, <type>interval</type>,
         <type>money</type>, <type>oid</type>, <type>pg_lsn</type>,
         <type>tid</type>, <type>xid8</type>,
         and also arrays and composite types containing sortable data types.
@@ -24721,6 +25079,28 @@ SELECT * FROM pg_ls_dir('.') WITH ORDINALITY AS t(ls,n);
       <row>
        <entry role="func_table_entry"><para role="func_signature">
         <indexterm>
+         <primary>pg_get_loaded_modules</primary>
+        </indexterm>
+        <function>pg_get_loaded_modules</function> ()
+        <returnvalue>setof record</returnvalue>
+        ( <parameter>module_name</parameter> <type>text</type>,
+        <parameter>version</parameter> <type>text</type>,
+        <parameter>file_name</parameter> <type>text</type> )
+       </para>
+       <para>
+        Returns a list of the loadable modules that are loaded into the
+        current server session.  The <parameter>module_name</parameter>
+        and <parameter>version</parameter> fields are NULL unless the
+        module author supplied values for them using
+        the <literal>PG_MODULE_MAGIC_EXT</literal> macro.
+        The <parameter>file_name</parameter> field gives the file
+        name of the module (shared library).
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
          <primary>pg_my_temp_schema</primary>
         </indexterm>
         <function>pg_my_temp_schema</function> ()
@@ -24760,6 +25140,19 @@ SELECT * FROM pg_ls_dir('.') WITH ORDINALITY AS t(ls,n);
         available (see <xref linkend="jit"/>) and the
         <xref linkend="guc-jit"/> configuration parameter is set to
         <literal>on</literal>.
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>pg_numa_available</primary>
+        </indexterm>
+        <function>pg_numa_available</function> ()
+        <returnvalue>boolean</returnvalue>
+       </para>
+       <para>
+        Returns true if the server has been compiled with <acronym>NUMA</acronym> support.
        </para></entry>
       </row>
 
@@ -27122,6 +27515,34 @@ acl      | {postgres=arwdDxtm/postgres,foo=r/postgres}
       <row>
        <entry role="func_table_entry"><para role="func_signature">
         <indexterm>
+         <primary>age</primary>
+        </indexterm>
+        <function>age</function>  ( <type>xid</type> )
+        <returnvalue>integer</returnvalue>
+       </para>
+       <para>
+        Returns the number of transactions between the supplied
+        transaction id and the current transaction counter.
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>mxid_age</primary>
+        </indexterm>
+        <function>mxid_age</function>  ( <type>xid</type> )
+        <returnvalue>integer</returnvalue>
+       </para>
+       <para>
+        Returns the number of multixacts IDs between the supplied
+        multixact ID and the current multixacts counter.
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
          <primary>pg_current_xact_id</primary>
         </indexterm>
         <function>pg_current_xact_id</function> ()
@@ -27263,7 +27684,8 @@ acl      | {postgres=arwdDxtm/postgres,foo=r/postgres}
    <para>
     The internal transaction ID type <type>xid</type> is 32 bits wide and
     wraps around every 4 billion transactions.  However,
-    the functions shown in <xref linkend="functions-pg-snapshot"/> use a
+    the functions shown in <xref linkend="functions-pg-snapshot"/>, except
+    <function>age</function> and <function>mxid_age</function>, use a
     64-bit type <type>xid8</type> that does not wrap around during the life
     of an installation and can be converted to <type>xid</type> by casting if
     required;  see <xref linkend="transaction-id"/> for details.
@@ -27345,33 +27767,6 @@ acl      | {postgres=arwdDxtm/postgres,foo=r/postgres}
      </thead>
 
      <tbody>
-      <row>
-       <entry role="func_table_entry"><para role="func_signature">
-        <indexterm>
-         <primary>age</primary>
-        </indexterm>
-        <function>age</function>  ( <type>xid</type> )
-        <returnvalue>integer</returnvalue>
-       </para>
-       <para>
-        Returns the number of transactions between the supplied
-        transaction id and the current transaction counter.
-       </para></entry>
-      </row>
-
-      <row>
-       <entry role="func_table_entry"><para role="func_signature">
-        <indexterm>
-         <primary>mxid_age</primary>
-        </indexterm>
-        <function>mxid_age</function>  ( <type>xid</type> )
-        <returnvalue>integer</returnvalue>
-       </para>
-       <para>
-        Returns the number of multixacts IDs between the supplied
-        multixact ID and the current multixacts counter.
-       </para></entry>
-      </row>
 
       <row>
        <entry role="func_table_entry"><para role="func_signature">
@@ -27856,6 +28251,11 @@ acl      | {postgres=arwdDxtm/postgres,foo=r/postgres}
        <entry><type>integer</type></entry>
       </row>
 
+      <row>
+       <entry><structfield>default_char_signedness</structfield></entry>
+       <entry><type>boolean</type></entry>
+      </row>
+
      </tbody>
     </tgroup>
    </table>
@@ -28190,6 +28590,11 @@ acl      | {postgres=arwdDxtm/postgres,foo=r/postgres}
         the SQL command <xref linkend="sql-set"/>.
        </para>
        <para>
+        <function>set_config</function> accepts the NULL value for
+        <parameter>new_value</parameter>, but as settings cannot be null, it
+        is interpreted as a request to reset the setting to its default value.
+       </para>
+       <para>
         <literal>set_config('log_statement_stats', 'off', false)</literal>
         <returnvalue>off</returnvalue>
        </para></entry>
@@ -28255,6 +28660,143 @@ acl      | {postgres=arwdDxtm/postgres,foo=r/postgres}
         <literal>pg_signal_autovacuum_worker</literal> are permitted to
         cancel autovacuum worker processes, which are otherwise considered
         superuser backends.
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>pg_get_process_memory_contexts</primary>
+        </indexterm>
+        <function>pg_get_process_memory_contexts</function> ( <parameter>pid</parameter> <type>integer</type>, <parameter>summary</parameter> <type>boolean</type>, <parameter>timeout</parameter> <type>float</type> )
+        <returnvalue>setof record</returnvalue>
+        ( <parameter>name</parameter> <type>text</type>,
+        <parameter>ident</parameter> <type>text</type>,
+        <parameter>type</parameter> <type>text</type>,
+        <parameter>path</parameter> <type>integer[]</type>,
+        <parameter>level</parameter> <type>integer</type>,
+        <parameter>total_bytes</parameter> <type>bigint</type>,
+        <parameter>total_nblocks</parameter> <type>bigint</type>,
+        <parameter>free_bytes</parameter> <type>bigint</type>,
+        <parameter>free_chunks</parameter> <type>bigint</type>,
+        <parameter>used_bytes</parameter> <type>bigint</type>,
+        <parameter>num_agg_contexts</parameter> <type>integer</type>,
+        <parameter>stats_timestamp</parameter> <type>timestamptz</type> )
+       </para>
+       <para>
+        This function handles requests to display the memory contexts of a
+        <productname>PostgreSQL</productname> process with the specified
+        process ID.  The function can be used to send requests to backends as
+        well as <glossterm linkend="glossary-auxiliary-proc">auxiliary processes</glossterm>.
+       </para>
+       <para>
+        The returned record contains extended statistics per each memory
+        context:
+        <itemizedlist spacing="compact">
+         <listitem>
+          <para>
+           <parameter>name</parameter> - The name of the memory context.
+          </para>
+         </listitem>
+         <listitem>
+          <para>
+           <parameter>ident</parameter> - Memory context ID (if any).
+          </para>
+         </listitem>
+         <listitem>
+          <para>
+           <parameter>type</parameter> - The type of memory context, possible
+           values are: AllocSet, Generation, Slab and Bump.
+          </para>
+         </listitem>
+         <listitem>
+          <para>
+           <parameter>path</parameter> - Memory contexts are organized in a
+           tree model with TopMemoryContext as the root, and all other memory
+           contexts as nodes in the tree. The <parameter>path</parameter>
+           displays the path from the root to the current memory context. The
+           path is limited to 100 children per node, which each node limited
+           to a max depth of 100, to preserve memory during reporting. The
+           printed path will also be limited to 100 nodes counting from the
+           TopMemoryContext.
+          </para>
+         </listitem>
+         <listitem>
+          <para>
+           <parameter>level</parameter> - The level in the tree of the current
+           memory context.
+          </para>
+         </listitem>
+         <listitem>
+          <para>
+           <parameter>total_bytes</parameter> - The total number of bytes
+           allocated to this memory context.
+          </para>
+         </listitem>
+         <listitem>
+          <para>
+           <parameter>total_nblocks</parameter> - The total number of blocks
+           used for the allocated memory.
+          </para>
+         </listitem>
+         <listitem>
+          <para>
+           <parameter>free_bytes</parameter> - The amount of free memory in
+           this memory context.
+          </para>
+         </listitem>
+         <listitem>
+          <para>
+           <parameter>free_chunks</parameter> - The number of chunks that
+           <parameter>free_bytes</parameter> corresponds to.
+          </para>
+         </listitem>
+         <listitem>
+          <para>
+           <parameter>used_bytes</parameter> - The total number of bytes
+           currently occupied.
+          </para>
+         </listitem>
+         <listitem>
+          <para>
+           <parameter>num_agg_contexts</parameter> - The number of memory
+           contexts aggregated in the displayed statistics.
+          </para>
+         </listitem>
+         <listitem>
+          <para>
+           <parameter>stats_timestamp</parameter> - When the statistics were
+           extracted from the process.
+          </para>
+         </listitem>
+        </itemizedlist>
+       </para>
+       <para>
+        When <parameter>summary</parameter> is <literal>true</literal>, statistics
+        for memory contexts at levels 1 and 2 are displayed, with level 1
+        representing the root node (i.e., <literal>TopMemoryContext</literal>).
+        Statistics for contexts on level 2 and below are aggregates of all
+        child contexts' statistics, where <literal>num_agg_contexts</literal>
+        indicate the number aggregated child contexts.  When
+        <parameter>summary</parameter> is <literal>false</literal>,
+        <literal>the num_agg_contexts</literal> value is <literal>1</literal>,
+        indicating that individual statistics are being displayed.
+       </para>
+       <para>
+        Busy processes can delay reporting memory context statistics,
+        <parameter>timeout</parameter> specifies the number of seconds
+        to wait for updated statistics. <parameter>timeout</parameter> can be
+        specified in fractions of a second.
+       </para>
+       <para>
+        After receiving memory context statistics from the target process, it
+        returns the results as one row per context.  If all the contexts don't
+        fit within the pre-determined size limit, the remaining context
+        statistics are aggregated and a cumulative total is displayed.  The
+        <literal>num_agg_contexts</literal> column indicates the number of
+        contexts aggregated in the displayed statistics.  When
+        <literal>num_agg_contexts</literal> is <literal>1</literal> it means
+        that the context statistics are displayed separately.
        </para></entry>
       </row>
 
@@ -28379,22 +28921,56 @@ One message for each memory context will be logged. For example:
 <screen>
 LOG:  logging memory contexts of PID 10377
 STATEMENT:  SELECT pg_log_backend_memory_contexts(pg_backend_pid());
-LOG:  level: 0; TopMemoryContext: 80800 total in 6 blocks; 14432 free (5 chunks); 66368 used
-LOG:  level: 1; pgstat TabStatusArray lookup hash table: 8192 total in 1 blocks; 1408 free (0 chunks); 6784 used
-LOG:  level: 1; TopTransactionContext: 8192 total in 1 blocks; 7720 free (1 chunks); 472 used
-LOG:  level: 1; RowDescriptionContext: 8192 total in 1 blocks; 6880 free (0 chunks); 1312 used
-LOG:  level: 1; MessageContext: 16384 total in 2 blocks; 5152 free (0 chunks); 11232 used
-LOG:  level: 1; Operator class cache: 8192 total in 1 blocks; 512 free (0 chunks); 7680 used
-LOG:  level: 1; smgr relation table: 16384 total in 2 blocks; 4544 free (3 chunks); 11840 used
-LOG:  level: 1; TransactionAbortContext: 32768 total in 1 blocks; 32504 free (0 chunks); 264 used
+LOG:  level: 1; TopMemoryContext: 80800 total in 6 blocks; 14432 free (5 chunks); 66368 used
+LOG:  level: 2; pgstat TabStatusArray lookup hash table: 8192 total in 1 blocks; 1408 free (0 chunks); 6784 used
+LOG:  level: 2; TopTransactionContext: 8192 total in 1 blocks; 7720 free (1 chunks); 472 used
+LOG:  level: 2; RowDescriptionContext: 8192 total in 1 blocks; 6880 free (0 chunks); 1312 used
+LOG:  level: 2; MessageContext: 16384 total in 2 blocks; 5152 free (0 chunks); 11232 used
+LOG:  level: 2; Operator class cache: 8192 total in 1 blocks; 512 free (0 chunks); 7680 used
+LOG:  level: 2; smgr relation table: 16384 total in 2 blocks; 4544 free (3 chunks); 11840 used
+LOG:  level: 2; TransactionAbortContext: 32768 total in 1 blocks; 32504 free (0 chunks); 264 used
 ...
-LOG:  level: 1; ErrorContext: 8192 total in 1 blocks; 7928 free (3 chunks); 264 used
+LOG:  level: 2; ErrorContext: 8192 total in 1 blocks; 7928 free (3 chunks); 264 used
 LOG:  Grand total: 1651920 bytes in 201 blocks; 622360 free (88 chunks); 1029560 used
 </screen>
     If there are more than 100 child contexts under the same parent, the first
     100 child contexts are logged, along with a summary of the remaining contexts.
     Note that frequent calls to this function could incur significant overhead,
     because it may generate a large number of log messages.
+   </para>
+
+   <para>
+    <function>pg_get_process_memory_contexts</function> can be used to request
+    memory contexts statistics of any <productname>PostgreSQL</productname>
+    process.  For example:
+<programlisting>
+postgres=# SELECT * FROM pg_get_process_memory_contexts(
+  (SELECT pid FROM pg_stat_activity
+    WHERE backend_type = 'checkpointer'),
+  false, 0.5) LIMIT 1;
+-[ RECORD 1 ]----+------------------------------
+name             | TopMemoryContext
+ident            |
+type             | AllocSet
+path             | {1}
+level            | 1
+total_bytes      | 90304
+total_nblocks    | 3
+free_bytes       | 2880
+free_chunks      | 1
+used_bytes       | 87424
+num_agg_contexts | 1
+stats_timestamp  | 2025-03-24 13:55:47.796698+01
+</programlisting>
+    <note>
+     <para>
+      While <function>pg_get_process_memory_contexts</function> can be used to
+      query memory contexts of the local backend,
+      <structname>pg_backend_memory_contexts</structname>
+      (see <xref linkend="view-pg-backend-memory-contexts"/> for more details)
+      will be less resource intensive when only the local backend is of interest.
+     </para>
+    </note>
    </para>
 
   </sect2>
@@ -28981,132 +29557,6 @@ postgres=# SELECT '0/0'::pg_lsn + pd.segment_number * ps.setting::int + :offset 
     the pause, the rate of WAL generation and available disk space.
    </para>
 
-   <para>
-    The procedure shown in <xref linkend="recovery-synchronization-procedure-table"/>
-    can be executed only during recovery.
-   </para>
-
-   <table id="recovery-synchronization-procedure-table">
-    <title>Recovery Synchronization Procedure</title>
-    <tgroup cols="1">
-     <thead>
-      <row>
-       <entry role="func_table_entry"><para role="func_signature">
-        Procedure
-       </para>
-       <para>
-        Description
-       </para></entry>
-      </row>
-     </thead>
-
-     <tbody>
-      <row>
-       <entry role="func_table_entry"><para role="func_signature">
-        <indexterm>
-         <primary>pg_wal_replay_wait</primary>
-        </indexterm>
-        <function>pg_wal_replay_wait</function> (
-          <parameter>target_lsn</parameter> <type>pg_lsn</type>,
-          <parameter>timeout</parameter> <type>bigint</type> <literal>DEFAULT</literal> <literal>0</literal>)
-        <returnvalue>void</returnvalue>
-       </para>
-       <para>
-        Waits until recovery replays <literal>target_lsn</literal>.
-        If no <parameter>timeout</parameter> is specified or it is set to
-        zero, this procedure waits indefinitely for the
-        <literal>target_lsn</literal>.  If the <parameter>timeout</parameter>
-        is specified (in milliseconds) and is greater than zero, the
-        procedure waits until <literal>target_lsn</literal> is reached or
-        the specified <parameter>timeout</parameter> has elapsed.
-        On timeout, or if the server is promoted before
-        <literal>target_lsn</literal> is reached, an error is emitted.
-       </para></entry>
-      </row>
-     </tbody>
-    </tgroup>
-   </table>
-
-   <para>
-    <function>pg_wal_replay_wait</function> waits till
-    <parameter>target_lsn</parameter> to be replayed on standby.
-    That is, after this function execution, the value returned by
-    <function>pg_last_wal_replay_lsn</function> should be greater or equal
-    to the <parameter>target_lsn</parameter> value.  This is useful to achieve
-    read-your-writes-consistency, while using async replica for reads and
-    primary for writes.  In that case <acronym>lsn</acronym> of the last
-    modification should be stored on the client application side or the
-    connection pooler side.
-   </para>
-
-   <para>
-    <function>pg_wal_replay_wait</function> should be called on standby.
-    If a user calls <function>pg_wal_replay_wait</function> on primary, it
-    will error out.  However, if <function>pg_wal_replay_wait</function> is
-    called on primary promoted from standby and <literal>target_lsn</literal>
-    was already replayed, then <function>pg_wal_replay_wait</function> just
-    exits immediately.
-   </para>
-
-   <para>
-    You can use <function>pg_wal_replay_wait</function> to wait for
-    the <type>pg_lsn</type> value.  For example, an application could update
-    the <literal>movie</literal> table and get the <acronym>lsn</acronym> after
-    changes just made.  This example uses <function>pg_current_wal_insert_lsn</function>
-    on primary server to get the <acronym>lsn</acronym> given that
-    <varname>synchronous_commit</varname> could be set to
-    <literal>off</literal>.
-
-   <programlisting>
-postgres=# UPDATE movie SET genre = 'Dramatic' WHERE genre = 'Drama';
-UPDATE 100
-postgres=# SELECT pg_current_wal_insert_lsn();
-pg_current_wal_insert_lsn
---------------------
-0/306EE20
-(1 row)
-   </programlisting>
-
-   Then an application could run <function>pg_wal_replay_wait</function>
-   with the <acronym>lsn</acronym> obtained from primary.  After that the
-   changes made on primary should be guaranteed to be visible on replica.
-
-   <programlisting>
-postgres=# CALL pg_wal_replay_wait('0/306EE20');
-CALL
-postgres=# SELECT * FROM movie WHERE genre = 'Drama';
- genre
--------
-(0 rows)
-   </programlisting>
-
-   It may also happen that target <acronym>lsn</acronym> is not reached
-   within the timeout.  In that case the error is thrown.
-
-   <programlisting>
-postgres=# CALL pg_wal_replay_wait('0/306EE20', 100);
-ERROR:  timed out while waiting for target LSN 0/306EE20 to be replayed; current replay LSN 0/306EA60
-    </programlisting>
-
-   </para>
-
-   <para>
-     <function>pg_wal_replay_wait</function> can't be used within
-     a transaction with an isolation level higher than
-     <literal>READ COMMITTED</literal>, another procedure, or a function.
-     All the cases above imply holding a snapshot, which could prevent
-     WAL records from replaying (see <xref linkend="hot-standby-conflict"/>)
-     and cause an indirect deadlock.
-
-   <programlisting>
-postgres=# BEGIN;
-BEGIN
-postgres=*# CALL pg_wal_replay_wait('0/306EE20');
-ERROR:  pg_wal_replay_wait() must be only called without an active or registered snapshot
-DETAIL:  Make sure pg_wal_replay_wait() isn't called within a transaction with an isolation level higher than READ COMMITTED, another procedure, or a function.
-   </programlisting>
-
-   </para>
   </sect2>
 
   <sect2 id="functions-snapshot-synchronization">
@@ -29287,8 +29737,7 @@ DETAIL:  Make sure pg_wal_replay_wait() isn't called within a transaction with a
        <para>
         Drops the physical or logical replication slot
         named <parameter>slot_name</parameter>. Same as replication protocol
-        command <literal>DROP_REPLICATION_SLOT</literal>. For logical slots, this must
-        be called while connected to the same database the slot was created on.
+        command <literal>DROP_REPLICATION_SLOT</literal>.
        </para></entry>
       </row>
 
@@ -29338,7 +29787,8 @@ DETAIL:  Make sure pg_wal_replay_wait() isn't called within a transaction with a
         The copied physical slot starts to reserve WAL from the same <acronym>LSN</acronym> as the
         source slot.
         <parameter>temporary</parameter> is optional. If <parameter>temporary</parameter>
-        is omitted, the same value as the source slot is used.
+        is omitted, the same value as the source slot is used. Copy of an
+        invalidated slot is not allowed.
        </para></entry>
       </row>
 
@@ -29360,6 +29810,11 @@ DETAIL:  Make sure pg_wal_replay_wait() isn't called within a transaction with a
         from the same <acronym>LSN</acronym> as the source logical slot.  Both
         <parameter>temporary</parameter> and <parameter>plugin</parameter> are
         optional; if they are omitted, the values of the source slot are used.
+        The <literal>failover</literal> option of the source logical slot
+        is not copied and is set to <literal>false</literal> by default. This
+        is to avoid the risk of being unable to continue logical replication
+        after failover to standby where the slot is being synchronized. Copy of
+        an invalidated slot is not allowed.
        </para></entry>
       </row>
 
@@ -29485,6 +29940,7 @@ DETAIL:  Make sure pg_wal_replay_wait() isn't called within a transaction with a
        <para>
         Creates a replication origin with the given external
         name, and returns the internal ID assigned to it.
+        The name must be no longer than 512 bytes.
        </para></entry>
       </row>
 
@@ -29645,11 +30101,11 @@ DETAIL:  Make sure pg_wal_replay_wait() isn't called within a transaction with a
         <indexterm>
          <primary>pg_logical_emit_message</primary>
         </indexterm>
-        <function>pg_logical_emit_message</function> ( <parameter>transactional</parameter> <type>boolean</type>, <parameter>prefix</parameter> <type>text</type>, <parameter>content</parameter> <type>text</type> [, <parameter>flush</parameter> <type>boolean</type> <literal>DEFAULT</literal> <literal>false</literal>] )
+        <function>pg_logical_emit_message</function> ( <parameter>transactional</parameter> <type>boolean</type>, <parameter>prefix</parameter> <type>text</type>, <parameter>content</parameter> <type>text</type> <optional>, <parameter>flush</parameter> <type>boolean</type> <literal>DEFAULT</literal> <literal>false</literal></optional> )
         <returnvalue>pg_lsn</returnvalue>
        </para>
        <para role="func_signature">
-        <function>pg_logical_emit_message</function> ( <parameter>transactional</parameter> <type>boolean</type>, <parameter>prefix</parameter> <type>text</type>, <parameter>content</parameter> <type>bytea</type> [, <parameter>flush</parameter> <type>boolean</type> <literal>DEFAULT</literal> <literal>false</literal>] )
+        <function>pg_logical_emit_message</function> ( <parameter>transactional</parameter> <type>boolean</type>, <parameter>prefix</parameter> <type>text</type>, <parameter>content</parameter> <type>bytea</type> <optional>, <parameter>flush</parameter> <type>boolean</type> <literal>DEFAULT</literal> <literal>false</literal></optional> )
         <returnvalue>pg_lsn</returnvalue>
        </para>
        <para>
@@ -30134,6 +30590,229 @@ DETAIL:  Make sure pg_wal_replay_wait() isn't called within a transaction with a
    </table>
 
    <para>
+    <xref linkend="functions-admin-statsmod"/> lists functions used to
+    manipulate statistics.
+    These functions cannot be executed during recovery.
+    <warning>
+     <para>
+      Changes made by these statistics manipulation functions are likely to be
+      overwritten by <link linkend="autovacuum">autovacuum</link> (or manual
+      <command>VACUUM</command> or <command>ANALYZE</command>) and should be
+      considered temporary.
+     </para>
+    </warning>
+   </para>
+
+   <table id="functions-admin-statsmod">
+    <title>Database Object Statistics Manipulation Functions</title>
+    <tgroup cols="1">
+     <thead>
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        Function
+       </para>
+       <para>
+        Description
+       </para></entry>
+      </row>
+     </thead>
+
+     <tbody>
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>pg_restore_relation_stats</primary>
+        </indexterm>
+        <function>pg_restore_relation_stats</function> (
+        <literal>VARIADIC</literal> <parameter>kwargs</parameter> <type>"any"</type> )
+        <returnvalue>boolean</returnvalue>
+       </para>
+        <para>
+         Updates table-level statistics.  Ordinarily, these statistics are
+         collected automatically or updated as a part of <xref
+         linkend="sql-vacuum"/> or <xref linkend="sql-analyze"/>, so it's not
+         necessary to call this function.  However, it is useful after a
+         restore to enable the optimizer to choose better plans if
+         <command>ANALYZE</command> has not been run yet.
+        </para>
+        <para>
+         The tracked statistics may change from version to version, so
+         arguments are passed as pairs of <replaceable>argname</replaceable>
+         and <replaceable>argvalue</replaceable> in the form:
+<programlisting>
+SELECT pg_restore_relation_stats(
+    '<replaceable>arg1name</replaceable>', '<replaceable>arg1value</replaceable>'::<replaceable>arg1type</replaceable>,
+    '<replaceable>arg2name</replaceable>', '<replaceable>arg2value</replaceable>'::<replaceable>arg2type</replaceable>,
+    '<replaceable>arg3name</replaceable>', '<replaceable>arg3value</replaceable>'::<replaceable>arg3type</replaceable>);
+</programlisting>
+        </para>
+        <para>
+         For example, to set the <structfield>relpages</structfield> and
+         <structfield>reltuples</structfield> values for the table
+         <structname>mytable</structname>:
+<programlisting>
+SELECT pg_restore_relation_stats(
+    'schemaname', 'myschema',
+    'relname',    'mytable',
+    'relpages',   173::integer,
+    'reltuples',  10000::real);
+</programlisting>
+        </para>
+        <para>
+         The arguments <literal>schemaname</literal> and
+         <literal>relname</literal> are required, and specify the table. Other
+         arguments are the names and values of statistics corresponding to
+         certain columns in <link
+         linkend="catalog-pg-class"><structname>pg_class</structname></link>.
+         The currently-supported relation statistics are
+         <literal>relpages</literal> with a value of type
+         <type>integer</type>, <literal>reltuples</literal> with a value of
+         type <type>real</type>, <literal>relallvisible</literal> with a value
+         of type <type>integer</type>, and <literal>relallfrozen</literal>
+         with a value of type <type>integer</type>.
+        </para>
+        <para>
+         Additionally, this function accepts argument name
+         <literal>version</literal> of type <type>integer</type>, which
+         specifies the server version from which the statistics originated.
+         This is anticipated to be helpful in porting statistics from older
+         versions of <productname>PostgreSQL</productname>.
+        </para>
+        <para>
+         Minor errors are reported as a <literal>WARNING</literal> and
+         ignored, and remaining statistics will still be restored. If all
+         specified statistics are successfully restored, returns
+         <literal>true</literal>, otherwise <literal>false</literal>.
+        </para>
+        <para>
+         The caller must have the <literal>MAINTAIN</literal> privilege on the
+         table or be the owner of the database.
+        </para>
+       </entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry">
+        <para role="func_signature">
+         <indexterm>
+          <primary>pg_clear_relation_stats</primary>
+         </indexterm>
+         <function>pg_clear_relation_stats</function> ( <parameter>schemaname</parameter> <type>text</type>, <parameter>relname</parameter> <type>text</type> )
+         <returnvalue>void</returnvalue>
+        </para>
+        <para>
+         Clears table-level statistics for the given relation, as though the
+         table was newly created.
+        </para>
+        <para>
+         The caller must have the <literal>MAINTAIN</literal> privilege on the
+         table or be the owner of the database.
+        </para>
+       </entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>pg_restore_attribute_stats</primary>
+        </indexterm>
+        <function>pg_restore_attribute_stats</function> (
+        <literal>VARIADIC</literal> <parameter>kwargs</parameter> <type>"any"</type> )
+        <returnvalue>boolean</returnvalue>
+       </para>
+        <para>
+         Creates or updates column-level statistics.  Ordinarily, these
+         statistics are collected automatically or updated as a part of <xref
+         linkend="sql-vacuum"/> or <xref linkend="sql-analyze"/>, so it's not
+         necessary to call this function.  However, it is useful after a
+         restore to enable the optimizer to choose better plans if
+         <command>ANALYZE</command> has not been run yet.
+        </para>
+        <para>
+         The tracked statistics may change from version to version, so
+         arguments are passed as pairs of <replaceable>argname</replaceable>
+         and <replaceable>argvalue</replaceable> in the form:
+<programlisting>
+SELECT pg_restore_attribute_stats(
+    '<replaceable>arg1name</replaceable>', '<replaceable>arg1value</replaceable>'::<replaceable>arg1type</replaceable>,
+    '<replaceable>arg2name</replaceable>', '<replaceable>arg2value</replaceable>'::<replaceable>arg2type</replaceable>,
+    '<replaceable>arg3name</replaceable>', '<replaceable>arg3value</replaceable>'::<replaceable>arg3type</replaceable>);
+</programlisting>
+        </para>
+        <para>
+         For example, to set the <structfield>avg_width</structfield> and
+         <structfield>null_frac</structfield> values for the attribute
+         <structfield>col1</structfield> of the table
+         <structname>mytable</structname>:
+<programlisting>
+SELECT pg_restore_attribute_stats(
+    'schemaname', 'myschema',
+    'relname',    'mytable',
+    'attname',    'col1',
+    'inherited',  false,
+    'avg_width',  125::integer,
+    'null_frac',  0.5::real);
+</programlisting>
+        </para>
+        <para>
+         The required arguments are <literal>schemaname</literal> and
+         <literal>relname</literal> with a value of type <type>text</type>
+         which specify the table; either <literal>attname</literal> with a
+         value of type <type>text</type> or <literal>attnum</literal> with a
+         value of type <type>smallint</type>, which specifies the column; and
+         <literal>inherited</literal>, which specifies whether the statistics
+         include values from child tables.  Other arguments are the names and
+         values of statistics corresponding to columns in <link
+         linkend="view-pg-stats"><structname>pg_stats</structname></link>.
+        </para>
+        <para>
+         Additionally, this function accepts argument name
+         <literal>version</literal> of type <type>integer</type>, which
+         specifies the server version from which the statistics originated.
+         This is anticipated to be helpful in porting statistics from older
+         versions of <productname>PostgreSQL</productname>.
+        </para>
+        <para>
+         Minor errors are reported as a <literal>WARNING</literal> and
+         ignored, and remaining statistics will still be restored. If all
+         specified statistics are successfully restored, returns
+         <literal>true</literal>, otherwise <literal>false</literal>.
+        </para>
+        <para>
+         The caller must have the <literal>MAINTAIN</literal> privilege on the
+         table or be the owner of the database.
+        </para>
+       </entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry">
+        <para role="func_signature">
+         <indexterm>
+          <primary>pg_clear_attribute_stats</primary>
+         </indexterm>
+         <function>pg_clear_attribute_stats</function> (
+         <parameter>schemaname</parameter> <type>text</type>,
+         <parameter>relname</parameter> <type>text</type>,
+         <parameter>attname</parameter> <type>text</type>,
+         <parameter>inherited</parameter> <type>boolean</type> )
+         <returnvalue>void</returnvalue>
+        </para>
+        <para>
+         Clears column-level statistics for the given relation and
+         attribute, as though the table was newly created.
+        </para>
+        <para>
+         The caller must have the <literal>MAINTAIN</literal> privilege on
+         the table or be the owner of the database.
+        </para>
+       </entry>
+      </row>
+     </tbody>
+    </tgroup>
+   </table>
+
+   <para>
     <xref linkend="functions-info-partition"/> lists functions that provide
     information about the structure of partitioned tables.
    </para>
@@ -30519,6 +31198,30 @@ SELECT pg_size_pretty(sum(pg_relation_size(relid))) AS total_size
         ordinary file in the server's <filename>pg_replslot/slot_name</filename>
         directory, where <parameter>slot_name</parameter> is the name of the
         replication slot provided as input of the function. Filenames beginning
+        with a dot, directories, and other special files are excluded.
+       </para>
+       <para>
+        This function is restricted to superusers and members of
+        the <literal>pg_monitor</literal> role by default, but other users can
+        be granted EXECUTE to run the function.
+       </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>pg_ls_summariesdir</primary>
+        </indexterm>
+        <function>pg_ls_summariesdir</function> ()
+        <returnvalue>setof record</returnvalue>
+        ( <parameter>name</parameter> <type>text</type>,
+        <parameter>size</parameter> <type>bigint</type>,
+        <parameter>modification</parameter> <type>timestamp with time zone</type> )
+       </para>
+       <para>
+        Returns the name, size, and last modification time (mtime) of each
+        ordinary file in the server's WAL summaries directory
+        (<filename>pg_wal/summaries</filename>).  Filenames beginning
         with a dot, directories, and other special files are excluded.
        </para>
        <para>
@@ -31354,8 +32057,12 @@ CREATE EVENT TRIGGER test_event_trigger_for_drops
         <returnvalue>integer</returnvalue>
        </para>
        <para>
-        Returns a code explaining the reason(s) for rewriting.  The exact
-        meaning of the codes is release dependent.
+        Returns a code explaining the reason(s) for rewriting. The value is
+        a bitmap built from the following values: <literal>1</literal>
+        (the table has changed its persistence), <literal>2</literal>
+        (default value of a column has changed), <literal>4</literal>
+        (a column has a new data type) and <literal>8</literal>
+        (the table access method has changed).
        </para></entry>
       </row>
      </tbody>

@@ -3,7 +3,7 @@
  * buffile.c
  *	  Management of large buffered temporary files.
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -97,7 +97,7 @@ struct BufFile
 	int			nbytes;			/* total # of valid bytes in buffer */
 
 	/*
-	 * XXX Should ideally us PGIOAlignedBlock, but might need a way to avoid
+	 * XXX Should ideally use PGIOAlignedBlock, but might need a way to avoid
 	 * wasting per-file alignment padding when some users create many files.
 	 */
 	PGAlignedBlock buffer;
@@ -459,7 +459,7 @@ BufFileLoadBuffer(BufFile *file)
 	 */
 	file->nbytes = FileRead(thisfile,
 							file->buffer.data,
-							sizeof(file->buffer),
+							sizeof(file->buffer.data),
 							file->curOffset,
 							WAIT_EVENT_BUFFILE_READ);
 	if (file->nbytes < 0)

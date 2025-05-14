@@ -70,13 +70,8 @@ KEY SHARE        conflict
 
 When there is a single locker in a tuple, we can just store the locking info
 in the tuple itself.  We do this by storing the locker's Xid in XMAX, and
-setting infomask bits specifying the locking strength.  There is one exception
-here: since infomask space is limited, we do not provide a separate bit
-for SELECT FOR SHARE, so we have to use the extended info in a MultiXact in
-that case.  (The other cases, SELECT FOR UPDATE and SELECT FOR KEY SHARE, are
-presumably more commonly used due to being the standards-mandated locking
-mechanism, or heavily used by the RI code, so we want to provide fast paths
-for those.)
+setting infomask bits specifying the locking strength.  See "Infomask Bits"
+below for details on the bit patterns we use.
 
 MultiXacts
 ----------
@@ -203,6 +198,4 @@ Inplace updates create an exception to the rule that tuple data won't change
 under a reader holding a pin.  A reader of a heap_fetch() result tuple may
 witness a torn read.  Current inplace-updated fields are aligned and are no
 wider than four bytes, and current readers don't need consistency across
-fields.  Hence, they get by with just fetching each field once.  XXX such a
-caller may also read a value that has not reached WAL; see
-systable_inplace_update_finish().
+fields.  Hence, they get by with just fetching each field once.

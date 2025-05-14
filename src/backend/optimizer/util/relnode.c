@@ -3,7 +3,7 @@
  * relnode.c
  *	  Relation-node lookup/construction routines
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -1911,6 +1911,13 @@ get_param_path_clause_serials(Path *path)
 {
 	if (path->param_info == NULL)
 		return NULL;			/* not parameterized */
+
+	/*
+	 * We don't currently support parameterized MergeAppend paths, as
+	 * explained in the comments for generate_orderedappend_paths.
+	 */
+	Assert(!IsA(path, MergeAppendPath));
+
 	if (IsA(path, NestPath) ||
 		IsA(path, MergePath) ||
 		IsA(path, HashPath))
@@ -1947,27 +1954,6 @@ get_param_path_clause_serials(Path *path)
 		 * enforced in each input path.
 		 */
 		AppendPath *apath = (AppendPath *) path;
-		Bitmapset  *pserials;
-		ListCell   *lc;
-
-		pserials = NULL;
-		foreach(lc, apath->subpaths)
-		{
-			Path	   *subpath = (Path *) lfirst(lc);
-			Bitmapset  *subserials;
-
-			subserials = get_param_path_clause_serials(subpath);
-			if (lc == list_head(apath->subpaths))
-				pserials = bms_copy(subserials);
-			else
-				pserials = bms_int_members(pserials, subserials);
-		}
-		return pserials;
-	}
-	else if (IsA(path, MergeAppendPath))
-	{
-		/* Same as AppendPath case */
-		MergeAppendPath *apath = (MergeAppendPath *) path;
 		Bitmapset  *pserials;
 		ListCell   *lc;
 
@@ -2185,6 +2171,10 @@ have_partkey_equi_join(PlannerInfo *root, RelOptInfo *joinrel,
 		if (pk_known_equal[ipk1])
 			continue;
 
+		/* Reject if the partition key collation differs from the clause's. */
+		if (rel1->part_scheme->partcollation[ipk1] != opexpr->inputcollid)
+			return false;
+
 		/*
 		 * The clause allows partitionwise join only if it uses the same
 		 * operator family as that specified by the partition key.
@@ -2258,6 +2248,8 @@ have_partkey_equi_join(PlannerInfo *root, RelOptInfo *joinrel,
 		{
 			Node	   *expr1 = (Node *) lfirst(lc);
 			ListCell   *lc2;
+			Oid			partcoll1 = rel1->part_scheme->partcollation[ipk];
+			Oid			exprcoll1 = exprCollation(expr1);
 
 			foreach(lc2, rel2->partexprs[ipk])
 			{
@@ -2265,8 +2257,26 @@ have_partkey_equi_join(PlannerInfo *root, RelOptInfo *joinrel,
 
 				if (exprs_known_equal(root, expr1, expr2, btree_opfamily))
 				{
-					pk_known_equal[ipk] = true;
-					break;
+					/*
+					 * Ensure that the collation of the expression matches
+					 * that of the partition key. Checking just one collation
+					 * (partcoll1 and exprcoll1) suffices because partcoll1
+					 * and partcoll2, as well as exprcoll1 and exprcoll2,
+					 * should be identical. This holds because both rel1 and
+					 * rel2 use the same PartitionScheme and expr1 and expr2
+					 * are equal.
+					 */
+					if (partcoll1 == exprcoll1)
+					{
+						Oid			partcoll2 PG_USED_FOR_ASSERTS_ONLY =
+							rel2->part_scheme->partcollation[ipk];
+						Oid			exprcoll2 PG_USED_FOR_ASSERTS_ONLY =
+							exprCollation(expr2);
+
+						Assert(partcoll2 == exprcoll2);
+						pk_known_equal[ipk] = true;
+						break;
+					}
 				}
 			}
 			if (pk_known_equal[ipk])

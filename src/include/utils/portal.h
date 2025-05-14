@@ -36,7 +36,7 @@
  * to look like NO SCROLL cursors.
  *
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/utils/portal.h
@@ -138,6 +138,7 @@ typedef struct PortalData
 	QueryCompletion qc;			/* command completion data for executed query */
 	List	   *stmts;			/* list of PlannedStmts */
 	CachedPlan *cplan;			/* CachedPlan, if stmts are from one */
+	CachedPlanSource *plansource;	/* CachedPlanSource, for cplan */
 
 	ParamListInfo portalParams; /* params to pass to query */
 	QueryEnvironment *queryEnv; /* environment for query */
@@ -145,7 +146,6 @@ typedef struct PortalData
 	/* Features/options */
 	PortalStrategy strategy;	/* see above */
 	int			cursorOptions;	/* DECLARE CURSOR option bits */
-	bool		run_once;		/* portal will only be run once */
 
 	/* Status data */
 	PortalStatus status;		/* see above */
@@ -241,7 +241,8 @@ extern void PortalDefineQuery(Portal portal,
 							  const char *sourceText,
 							  CommandTag commandTag,
 							  List *stmts,
-							  CachedPlan *cplan);
+							  CachedPlan *cplan,
+							  CachedPlanSource *plansource);
 extern PlannedStmt *PortalGetPrimaryStmt(Portal portal);
 extern void PortalCreateHoldStore(Portal portal);
 extern void PortalHashTableDeleteAll(void);

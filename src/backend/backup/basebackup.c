@@ -3,7 +3,7 @@
  * basebackup.c
  *	  code for taking a base backup and streaming it to a standby
  *
- * Portions Copyright (c) 2010-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2010-2025, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/backup/basebackup.c
@@ -33,7 +33,6 @@
 #include "nodes/pg_list.h"
 #include "pgstat.h"
 #include "pgtar.h"
-#include "port.h"
 #include "postmaster/syslogger.h"
 #include "postmaster/walsummarizer.h"
 #include "replication/slot.h"
@@ -250,8 +249,10 @@ perform_base_backup(basebackup_options *opt, bbsink *sink,
 	state.bytes_total_is_valid = false;
 
 	/* we're going to use a BufFile, so we need a ResourceOwner */
-	Assert(CurrentResourceOwner == NULL);
-	CurrentResourceOwner = ResourceOwnerCreate(NULL, "base backup");
+	Assert(AuxProcessResourceOwner != NULL);
+	Assert(CurrentResourceOwner == AuxProcessResourceOwner ||
+		   CurrentResourceOwner == NULL);
+	CurrentResourceOwner = AuxProcessResourceOwner;
 
 	backup_started_in_recovery = RecoveryInProgress();
 
@@ -672,7 +673,7 @@ perform_base_backup(basebackup_options *opt, bbsink *sink,
 	FreeBackupManifest(&manifest);
 
 	/* clean up the resource owner we created */
-	WalSndResourceCleanup(true);
+	ReleaseAuxProcessResources(true);
 
 	basebackup_progress_done();
 }
@@ -1348,7 +1349,7 @@ sendDir(bbsink *sink, const char *path, int basepathlen, bool sizeonly,
 		snprintf(pathbuf, sizeof(pathbuf), "%s/%s", path, de->d_name);
 
 		/* Skip pg_control here to back up it last */
-		if (strcmp(pathbuf, "./global/pg_control") == 0)
+		if (strcmp(pathbuf, "./" XLOG_CONTROL_FILE) == 0)
 			continue;
 
 		if (lstat(pathbuf, &statbuf) != 0)
@@ -1816,6 +1817,7 @@ sendFile(bbsink *sink, const char *readfilename, const char *tarfilename,
 							   checksum_failures,
 							   readfilename, checksum_failures)));
 
+		pgstat_prepare_report_checksum_failure(dboid);
 		pgstat_report_checksum_failures_in_db(dboid, checksum_failures);
 	}
 

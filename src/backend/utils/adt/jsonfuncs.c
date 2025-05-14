@@ -3,7 +3,7 @@
  * jsonfuncs.c
  *		Functions to process JSON data types.
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -286,6 +286,7 @@ typedef struct StripnullState
 	JsonLexContext *lex;
 	StringInfo	strval;
 	bool		skip_next_null;
+	bool		strip_in_arrays;
 } StripnullState;
 
 /* structure for generalized json/jsonb value passing */
@@ -617,7 +618,7 @@ jsonb_object_keys(PG_FUNCTION_ARGS)
 		}
 
 		MemoryContextSwitchTo(oldcontext);
-		funcctx->user_fctx = (void *) state;
+		funcctx->user_fctx = state;
 	}
 
 	funcctx = SRF_PERCALL_SETUP();
@@ -752,7 +753,7 @@ json_object_keys(PG_FUNCTION_ARGS)
 		state->sent_count = 0;
 		state->result = palloc(256 * sizeof(char *));
 
-		sem->semstate = (void *) state;
+		sem->semstate = state;
 		sem->array_start = okeys_array_start;
 		sem->scalar = okeys_scalar;
 		sem->object_field_start = okeys_object_field_start;
@@ -765,7 +766,7 @@ json_object_keys(PG_FUNCTION_ARGS)
 		pfree(sem);
 
 		MemoryContextSwitchTo(oldcontext);
-		funcctx->user_fctx = (void *) state;
+		funcctx->user_fctx = state;
 	}
 
 	funcctx = SRF_PERCALL_SETUP();
@@ -1123,7 +1124,7 @@ get_worker(text *json,
 	if (npath > 0)
 		state->pathok[0] = true;
 
-	sem->semstate = (void *) state;
+	sem->semstate = state;
 
 	/*
 	 * Not all variants need all the semantic routines. Only set the ones that
@@ -1722,9 +1723,9 @@ push_path(JsonbParseState **st, int level, Datum *path_elems,
 {
 	/*
 	 * tpath contains expected type of an empty jsonb created at each level
-	 * higher or equal than the current one, either jbvObject or jbvArray.
-	 * Since it contains only information about path slice from level to the
-	 * end, the access index must be normalized by level.
+	 * higher or equal to the current one, either jbvObject or jbvArray. Since
+	 * it contains only information about path slice from level to the end,
+	 * the access index must be normalized by level.
 	 */
 	enum jbvType *tpath = palloc0((path_len - level) * sizeof(enum jbvType));
 	JsonbValue	newkey;
@@ -1863,7 +1864,7 @@ json_array_length(PG_FUNCTION_ARGS)
 #endif
 
 	sem = palloc0(sizeof(JsonSemAction));
-	sem->semstate = (void *) state;
+	sem->semstate = state;
 	sem->object_start = alen_object_start;
 	sem->scalar = alen_scalar;
 	sem->array_element_start = alen_array_element_start;
@@ -2071,7 +2072,7 @@ each_worker(FunctionCallInfo fcinfo, bool as_text)
 	state->tuple_store = rsi->setResult;
 	state->ret_tdesc = rsi->setDesc;
 
-	sem->semstate = (void *) state;
+	sem->semstate = state;
 	sem->array_start = each_array_start;
 	sem->scalar = each_scalar;
 	sem->object_field_start = each_object_field_start;
@@ -2323,7 +2324,7 @@ elements_worker(FunctionCallInfo fcinfo, const char *funcname, bool as_text)
 	state->tuple_store = rsi->setResult;
 	state->ret_tdesc = rsi->setDesc;
 
-	sem->semstate = (void *) state;
+	sem->semstate = state;
 	sem->object_start = elements_object_start;
 	sem->scalar = elements_scalar;
 	sem->array_element_start = elements_array_element_start;
@@ -2795,7 +2796,7 @@ populate_array_json(PopulateArrayContext *ctx, const char *json, int len)
 	state.ctx = ctx;
 
 	memset(&sem, 0, sizeof(sem));
-	sem.semstate = (void *) &state;
+	sem.semstate = &state;
 	sem.object_start = populate_array_object_start;
 	sem.array_end = populate_array_array_end;
 	sem.array_element_start = populate_array_element_start;
@@ -3831,7 +3832,7 @@ get_json_object_as_hash(const char *json, int len, const char *funcname,
 	state->lex = makeJsonLexContextCstringLen(NULL, json, len,
 											  GetDatabaseEncoding(), true);
 
-	sem->semstate = (void *) state;
+	sem->semstate = state;
 	sem->array_start = hash_array_start;
 	sem->scalar = hash_scalar;
 	sem->object_field_start = hash_object_field_start;
@@ -4144,7 +4145,7 @@ populate_recordset_worker(FunctionCallInfo fcinfo, const char *funcname,
 
 		makeJsonLexContext(&lex, json, true);
 
-		sem->semstate = (void *) state;
+		sem->semstate = state;
 		sem->array_start = populate_recordset_array_start;
 		sem->array_element_start = populate_recordset_array_element_start;
 		sem->scalar = populate_recordset_scalar;
@@ -4460,8 +4461,19 @@ sn_array_element_start(void *state, bool isnull)
 {
 	StripnullState *_state = (StripnullState *) state;
 
-	if (_state->strval->data[_state->strval->len - 1] != '[')
+	/* If strip_in_arrays is enabled and this is a null, mark it for skipping */
+	if (isnull && _state->strip_in_arrays)
+	{
+		_state->skip_next_null = true;
+		return JSON_SUCCESS;
+	}
+
+	/* Only add a comma if this is not the first valid element */
+	if (_state->strval->len > 0 &&
+		_state->strval->data[_state->strval->len - 1] != '[')
+	{
 		appendStringInfoCharMacro(_state->strval, ',');
+	}
 
 	return JSON_SUCCESS;
 }
@@ -4493,6 +4505,7 @@ Datum
 json_strip_nulls(PG_FUNCTION_ARGS)
 {
 	text	   *json = PG_GETARG_TEXT_PP(0);
+	bool		strip_in_arrays = PG_NARGS() == 2 ? PG_GETARG_BOOL(1) : false;
 	StripnullState *state;
 	JsonLexContext lex;
 	JsonSemAction *sem;
@@ -4503,8 +4516,9 @@ json_strip_nulls(PG_FUNCTION_ARGS)
 	state->lex = makeJsonLexContext(&lex, json, true);
 	state->strval = makeStringInfo();
 	state->skip_next_null = false;
+	state->strip_in_arrays = strip_in_arrays;
 
-	sem->semstate = (void *) state;
+	sem->semstate = state;
 	sem->object_start = sn_object_start;
 	sem->object_end = sn_object_end;
 	sem->array_start = sn_array_start;
@@ -4520,12 +4534,13 @@ json_strip_nulls(PG_FUNCTION_ARGS)
 }
 
 /*
- * SQL function jsonb_strip_nulls(jsonb) -> jsonb
+ * SQL function jsonb_strip_nulls(jsonb, bool) -> jsonb
  */
 Datum
 jsonb_strip_nulls(PG_FUNCTION_ARGS)
 {
 	Jsonb	   *jb = PG_GETARG_JSONB_P(0);
+	bool		strip_in_arrays = false;
 	JsonbIterator *it;
 	JsonbParseState *parseState = NULL;
 	JsonbValue *res = NULL;
@@ -4533,6 +4548,9 @@ jsonb_strip_nulls(PG_FUNCTION_ARGS)
 				k;
 	JsonbIteratorToken type;
 	bool		last_was_key = false;
+
+	if (PG_NARGS() == 2)
+		strip_in_arrays = PG_GETARG_BOOL(1);
 
 	if (JB_ROOT_IS_SCALAR(jb))
 		PG_RETURN_POINTER(jb);
@@ -4563,6 +4581,11 @@ jsonb_strip_nulls(PG_FUNCTION_ARGS)
 			/* otherwise, do a delayed push of the key */
 			(void) pushJsonbValue(&parseState, WJB_KEY, &k);
 		}
+
+		/* if strip_in_arrays is set, also skip null array elements */
+		if (strip_in_arrays)
+			if (type == WJB_ELEM && v.type == jbvNull)
+				continue;
 
 		if (type == WJB_VALUE || type == WJB_ELEM)
 			res = pushJsonbValue(&parseState, type, &v);
@@ -5718,7 +5741,7 @@ iterate_json_values(text *json, uint32 flags, void *action_state,
 	state->action_state = action_state;
 	state->flags = flags;
 
-	sem->semstate = (void *) state;
+	sem->semstate = state;
 	sem->scalar = iterate_values_scalar;
 	sem->object_field_start = iterate_values_object_field_start;
 
@@ -5839,7 +5862,7 @@ transform_json_string_values(text *json, void *action_state,
 	state->action = transform_action;
 	state->action_state = action_state;
 
-	sem->semstate = (void *) state;
+	sem->semstate = state;
 	sem->object_start = transform_string_values_object_start;
 	sem->object_end = transform_string_values_object_end;
 	sem->array_start = transform_string_values_array_start;

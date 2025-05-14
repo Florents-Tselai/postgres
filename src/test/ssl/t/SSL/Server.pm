@@ -1,5 +1,5 @@
 
-# Copyright (c) 2021-2024, PostgreSQL Global Development Group
+# Copyright (c) 2021-2025, PostgreSQL Global Development Group
 
 =pod
 
@@ -244,6 +244,23 @@ sub ssl_library
 
 =pod
 
+=item $server->is_libressl()
+
+Detect whether the currently used SSL backend is LibreSSL.
+(Ideally we'd not need this hack, but presently we do.)
+
+=cut
+
+sub is_libressl
+{
+	my $self = shift;
+	my $backend = $self->{backend};
+
+	return $backend->library_is_libressl();
+}
+
+=pod
+
 =item switch_server_cert(params)
 
 Change the configuration to use the given set of certificate, key, ca and
@@ -300,6 +317,11 @@ sub switch_server_cert
 	ok(unlink($node->data_dir . '/sslconfig.conf'));
 	$node->append_conf('sslconfig.conf', "ssl=on");
 	$node->append_conf('sslconfig.conf', $backend->set_server_cert(\%params));
+	# use lists of ECDH curves and cipher suites for syntax testing
+	$node->append_conf('sslconfig.conf', 'ssl_groups=X25519:prime256v1:secp521r1');
+	$node->append_conf('sslconfig.conf',
+		'ssl_tls13_ciphers=TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256');
+
 	$node->append_conf('sslconfig.conf',
 		"ssl_passphrase_command='" . $params{passphrase_cmd} . "'")
 	  if defined $params{passphrase_cmd};

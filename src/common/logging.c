@@ -1,7 +1,7 @@
 /*-------------------------------------------------------------------------
  * Logging framework for frontend programs
  *
- * Copyright (c) 2018-2024, PostgreSQL Global Development Group
+ * Copyright (c) 2018-2025, PostgreSQL Global Development Group
  *
  * src/common/logging.c
  *
@@ -120,8 +120,9 @@ pg_logging_init(const char *argv0)
 			if (colors)
 			{
 				char	   *token;
+				char	   *cp = colors;
 
-				while ((token = strsep(&colors, ":")))
+				while ((token = strsep(&cp, ":")))
 				{
 					char	   *e = strchr(token, '=');
 

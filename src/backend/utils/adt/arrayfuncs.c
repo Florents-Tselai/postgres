@@ -3,7 +3,7 @@
  * arrayfuncs.c
  *	  Support functions for arrays.
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -3404,6 +3404,12 @@ construct_array_builtin(Datum *elems, int nelems, Oid elmtype)
 			elmalign = TYPALIGN_INT;
 			break;
 
+		case FLOAT8OID:
+			elmlen = sizeof(float8);
+			elmbyval = FLOAT8PASSBYVAL;
+			elmalign = TYPALIGN_DOUBLE;
+			break;
+
 		case INT2OID:
 			elmlen = sizeof(int16);
 			elmbyval = true;
@@ -3445,6 +3451,12 @@ construct_array_builtin(Datum *elems, int nelems, Oid elmtype)
 			elmlen = sizeof(ItemPointerData);
 			elmbyval = false;
 			elmalign = TYPALIGN_SHORT;
+			break;
+
+		case XIDOID:
+			elmlen = sizeof(TransactionId);
+			elmbyval = true;
+			elmalign = TYPALIGN_INT;
 			break;
 
 		default:
@@ -3851,7 +3863,7 @@ array_eq(PG_FUNCTION_ARGS)
 						(errcode(ERRCODE_UNDEFINED_FUNCTION),
 						 errmsg("could not identify an equality operator for type %s",
 								format_type_be(element_type))));
-			fcinfo->flinfo->fn_extra = (void *) typentry;
+			fcinfo->flinfo->fn_extra = typentry;
 		}
 		typlen = typentry->typlen;
 		typbyval = typentry->typbyval;
@@ -4015,7 +4027,7 @@ array_cmp(FunctionCallInfo fcinfo)
 					(errcode(ERRCODE_UNDEFINED_FUNCTION),
 					 errmsg("could not identify a comparison function for type %s",
 							format_type_be(element_type))));
-		fcinfo->flinfo->fn_extra = (void *) typentry;
+		fcinfo->flinfo->fn_extra = typentry;
 	}
 	typlen = typentry->typlen;
 	typbyval = typentry->typbyval;
@@ -4210,7 +4222,7 @@ hash_array(PG_FUNCTION_ARGS)
 			typentry = record_typentry;
 		}
 
-		fcinfo->flinfo->fn_extra = (void *) typentry;
+		fcinfo->flinfo->fn_extra = typentry;
 	}
 
 	typlen = typentry->typlen;
@@ -4304,7 +4316,7 @@ hash_array_extended(PG_FUNCTION_ARGS)
 					(errcode(ERRCODE_UNDEFINED_FUNCTION),
 					 errmsg("could not identify an extended hash function for type %s",
 							format_type_be(element_type))));
-		fcinfo->flinfo->fn_extra = (void *) typentry;
+		fcinfo->flinfo->fn_extra = typentry;
 	}
 	typlen = typentry->typlen;
 	typbyval = typentry->typbyval;
@@ -4406,7 +4418,7 @@ array_contain_compare(AnyArrayType *array1, AnyArrayType *array2, Oid collation,
 					(errcode(ERRCODE_UNDEFINED_FUNCTION),
 					 errmsg("could not identify an equality operator for type %s",
 							format_type_be(element_type))));
-		*fn_extra = (void *) typentry;
+		*fn_extra = typentry;
 	}
 	typlen = typentry->typlen;
 	typbyval = typentry->typbyval;
@@ -5770,9 +5782,14 @@ ArrayBuildStateAny *
 initArrayResultAny(Oid input_type, MemoryContext rcontext, bool subcontext)
 {
 	ArrayBuildStateAny *astate;
-	Oid			element_type = get_element_type(input_type);
 
-	if (OidIsValid(element_type))
+	/*
+	 * int2vector and oidvector will satisfy both get_element_type and
+	 * get_array_type.  We prefer to treat them as scalars, to be consistent
+	 * with get_promoted_array_type.  Hence, check get_array_type not
+	 * get_element_type.
+	 */
+	if (!OidIsValid(get_array_type(input_type)))
 	{
 		/* Array case */
 		ArrayBuildStateArr *arraystate;
@@ -5788,9 +5805,6 @@ initArrayResultAny(Oid input_type, MemoryContext rcontext, bool subcontext)
 	{
 		/* Scalar case */
 		ArrayBuildState *scalarstate;
-
-		/* Let's just check that we have a type that can be put into arrays */
-		Assert(OidIsValid(get_array_type(input_type)));
 
 		scalarstate = initArrayResult(input_type, rcontext, subcontext);
 		astate = (ArrayBuildStateAny *)
@@ -6425,7 +6439,7 @@ array_replace_internal(ArrayType *array,
 					(errcode(ERRCODE_UNDEFINED_FUNCTION),
 					 errmsg("could not identify an equality operator for type %s",
 							format_type_be(element_type))));
-		fcinfo->flinfo->fn_extra = (void *) typentry;
+		fcinfo->flinfo->fn_extra = typentry;
 	}
 	typlen = typentry->typlen;
 	typbyval = typentry->typbyval;
@@ -6711,7 +6725,7 @@ width_bucket_array(PG_FUNCTION_ARGS)
 						(errcode(ERRCODE_UNDEFINED_FUNCTION),
 						 errmsg("could not identify a comparison function for type %s",
 								format_type_be(element_type))));
-			fcinfo->flinfo->fn_extra = (void *) typentry;
+			fcinfo->flinfo->fn_extra = typentry;
 		}
 
 		/*

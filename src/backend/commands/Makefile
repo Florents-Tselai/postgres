@@ -34,6 +34,9 @@ OBJS = \
 	dropcmds.o \
 	event_trigger.o \
 	explain.o \
+	explain_dr.o \
+	explain_format.o \
+	explain_state.o \
 	extension.o \
 	foreigncmds.o \
 	functioncmds.o \
@@ -61,7 +64,6 @@ OBJS = \
 	vacuum.o \
 	vacuumparallel.o \
 	variable.o \
-	view.o \
-	waitlsn.o
+	view.o
 
 include $(top_srcdir)/src/backend/common.mk

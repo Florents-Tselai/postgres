@@ -1,7 +1,7 @@
 /*
  * PostgreSQL System Views
  *
- * Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Copyright (c) 1996-2025, PostgreSQL Global Development Group
  *
  * src/backend/catalog/system_views.sql
  *
@@ -634,7 +634,12 @@ REVOKE ALL ON pg_ident_file_mappings FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION pg_ident_file_mappings() FROM PUBLIC;
 
 CREATE VIEW pg_timezone_abbrevs AS
-    SELECT * FROM pg_timezone_abbrevs();
+    SELECT * FROM pg_timezone_abbrevs_zone() z
+    UNION ALL
+    (SELECT * FROM pg_timezone_abbrevs_abbrevs() a
+     WHERE NOT EXISTS (SELECT 1 FROM pg_timezone_abbrevs_zone() z2
+                       WHERE z2.abbrev = a.abbrev))
+    ORDER BY abbrev;
 
 CREATE VIEW pg_timezone_names AS
     SELECT * FROM pg_timezone_names();
@@ -653,6 +658,14 @@ GRANT SELECT ON pg_shmem_allocations TO pg_read_all_stats;
 REVOKE EXECUTE ON FUNCTION pg_get_shmem_allocations() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION pg_get_shmem_allocations() TO pg_read_all_stats;
 
+CREATE VIEW pg_shmem_allocations_numa AS
+    SELECT * FROM pg_get_shmem_allocations_numa();
+
+REVOKE ALL ON pg_shmem_allocations_numa FROM PUBLIC;
+GRANT SELECT ON pg_shmem_allocations_numa TO pg_read_all_stats;
+REVOKE EXECUTE ON FUNCTION pg_get_shmem_allocations_numa() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION pg_get_shmem_allocations_numa() TO pg_read_all_stats;
+
 CREATE VIEW pg_backend_memory_contexts AS
     SELECT * FROM pg_get_backend_memory_contexts();
 
@@ -660,6 +673,11 @@ REVOKE ALL ON pg_backend_memory_contexts FROM PUBLIC;
 GRANT SELECT ON pg_backend_memory_contexts TO pg_read_all_stats;
 REVOKE EXECUTE ON FUNCTION pg_get_backend_memory_contexts() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION pg_get_backend_memory_contexts() TO pg_read_all_stats;
+
+REVOKE EXECUTE ON FUNCTION
+	pg_get_process_memory_contexts(integer, boolean, float) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION
+	pg_get_process_memory_contexts(integer, boolean, float) TO pg_read_all_stats;
 
 -- Statistics views
 
@@ -691,7 +709,11 @@ CREATE VIEW pg_stat_all_tables AS
             pg_stat_get_vacuum_count(C.oid) AS vacuum_count,
             pg_stat_get_autovacuum_count(C.oid) AS autovacuum_count,
             pg_stat_get_analyze_count(C.oid) AS analyze_count,
-            pg_stat_get_autoanalyze_count(C.oid) AS autoanalyze_count
+            pg_stat_get_autoanalyze_count(C.oid) AS autoanalyze_count,
+            pg_stat_get_total_vacuum_time(C.oid) AS total_vacuum_time,
+            pg_stat_get_total_autovacuum_time(C.oid) AS total_autovacuum_time,
+            pg_stat_get_total_analyze_time(C.oid) AS total_analyze_time,
+            pg_stat_get_total_autoanalyze_time(C.oid) AS total_autoanalyze_time
     FROM pg_class C LEFT JOIN
          pg_index I ON C.oid = I.indrelid
          LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace)
@@ -1016,6 +1038,7 @@ CREATE VIEW pg_replication_slots AS
             L.wal_status,
             L.safe_wal_size,
             L.two_phase,
+            L.two_phase_at,
             L.inactive_since,
             L.conflicting,
             L.invalidation_reason,
@@ -1073,6 +1096,8 @@ CREATE VIEW pg_stat_database AS
             pg_stat_get_db_sessions_abandoned(D.oid) AS sessions_abandoned,
             pg_stat_get_db_sessions_fatal(D.oid) AS sessions_fatal,
             pg_stat_get_db_sessions_killed(D.oid) AS sessions_killed,
+            pg_stat_get_db_parallel_workers_to_launch(D.oid) as parallel_workers_to_launch,
+            pg_stat_get_db_parallel_workers_launched(D.oid) as parallel_workers_launched,
             pg_stat_get_db_stat_reset_time(D.oid) AS stats_reset
     FROM (
         SELECT 0 AS oid, NULL::name AS datname
@@ -1138,12 +1163,14 @@ CREATE VIEW pg_stat_checkpointer AS
     SELECT
         pg_stat_get_checkpointer_num_timed() AS num_timed,
         pg_stat_get_checkpointer_num_requested() AS num_requested,
+        pg_stat_get_checkpointer_num_performed() AS num_done,
         pg_stat_get_checkpointer_restartpoints_timed() AS restartpoints_timed,
         pg_stat_get_checkpointer_restartpoints_requested() AS restartpoints_req,
         pg_stat_get_checkpointer_restartpoints_performed() AS restartpoints_done,
         pg_stat_get_checkpointer_write_time() AS write_time,
         pg_stat_get_checkpointer_sync_time() AS sync_time,
         pg_stat_get_checkpointer_buffers_written() AS buffers_written,
+        pg_stat_get_checkpointer_slru_written() AS slru_written,
         pg_stat_get_checkpointer_stat_reset_time() AS stats_reset;
 
 CREATE VIEW pg_stat_io AS
@@ -1152,14 +1179,16 @@ SELECT
        b.object,
        b.context,
        b.reads,
+       b.read_bytes,
        b.read_time,
        b.writes,
+       b.write_bytes,
        b.write_time,
        b.writebacks,
        b.writeback_time,
        b.extends,
+       b.extend_bytes,
        b.extend_time,
-       b.op_bytes,
        b.hits,
        b.evictions,
        b.reuses,
@@ -1174,10 +1203,6 @@ CREATE VIEW pg_stat_wal AS
         w.wal_fpi,
         w.wal_bytes,
         w.wal_buffers_full,
-        w.wal_write,
-        w.wal_sync,
-        w.wal_write_time,
-        w.wal_sync_time,
         w.stats_reset
     FROM pg_stat_get_wal() w;
 
@@ -1198,7 +1223,8 @@ CREATE VIEW pg_stat_progress_analyze AS
         S.param5 AS ext_stats_computed,
         S.param6 AS child_tables_total,
         S.param7 AS child_tables_done,
-        CAST(S.param8 AS oid) AS current_child_table_relid
+        CAST(S.param8 AS oid) AS current_child_table_relid,
+        S.param9 / 1000000::double precision AS delay_time
     FROM pg_stat_get_progress_info('ANALYZE') AS S
         LEFT JOIN pg_database D ON S.datid = D.oid;
 
@@ -1218,7 +1244,8 @@ CREATE VIEW pg_stat_progress_vacuum AS
         S.param4 AS heap_blks_vacuumed, S.param5 AS index_vacuum_count,
         S.param6 AS max_dead_tuple_bytes, S.param7 AS dead_tuple_bytes,
         S.param8 AS num_dead_item_ids, S.param9 AS indexes_total,
-        S.param10 AS indexes_processed
+        S.param10 AS indexes_processed,
+        S.param11 / 1000000::double precision AS delay_time
     FROM pg_stat_get_progress_info('VACUUM') AS S
         LEFT JOIN pg_database D ON S.datid = D.oid;
 
@@ -1371,9 +1398,17 @@ CREATE VIEW pg_stat_subscription_stats AS
         ss.confl_update_missing,
         ss.confl_delete_origin_differs,
         ss.confl_delete_missing,
+        ss.confl_multiple_unique_conflicts,
         ss.stats_reset
     FROM pg_subscription as s,
          pg_stat_get_subscription_stats(s.oid) as ss;
 
 CREATE VIEW pg_wait_events AS
     SELECT * FROM pg_get_wait_events();
+
+CREATE VIEW pg_aios AS
+    SELECT * FROM pg_get_aios();
+REVOKE ALL ON pg_aios FROM PUBLIC;
+GRANT SELECT ON pg_aios TO pg_read_all_stats;
+REVOKE EXECUTE ON FUNCTION pg_get_aios() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION pg_get_aios() TO pg_read_all_stats;

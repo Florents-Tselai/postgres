@@ -4,7 +4,7 @@
  *	  TidStore interface.
  *
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/access/tidstore.h
@@ -22,7 +22,7 @@ typedef struct TidStoreIter TidStoreIter;
 
 /*
  * Result struct for TidStoreIterateNext.  This is copyable, but should be
- * treated as opaque.  Call TidStoreGetOffsets() to obtain the offsets.
+ * treated as opaque.  Call TidStoreGetBlockOffsets() to obtain the offsets.
  */
 typedef struct TidStoreIterResult
 {

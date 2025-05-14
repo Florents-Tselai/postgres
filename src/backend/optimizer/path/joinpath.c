@@ -3,7 +3,7 @@
  * joinpath.c
  *	  Routines to find all possible paths for processing a set of joins
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -25,6 +25,7 @@
 #include "optimizer/paths.h"
 #include "optimizer/placeholder.h"
 #include "optimizer/planmain.h"
+#include "optimizer/restrictinfo.h"
 #include "utils/lsyscache.h"
 #include "utils/typcache.h"
 
@@ -58,9 +59,6 @@ static void try_partial_mergejoin_path(PlannerInfo *root,
 static void sort_inner_and_outer(PlannerInfo *root, RelOptInfo *joinrel,
 								 RelOptInfo *outerrel, RelOptInfo *innerrel,
 								 JoinType jointype, JoinPathExtraData *extra);
-static inline bool clause_sides_match_join(RestrictInfo *rinfo,
-										   RelOptInfo *outerrel,
-										   RelOptInfo *innerrel);
 static void match_unsorted_outer(PlannerInfo *root, RelOptInfo *joinrel,
 								 RelOptInfo *outerrel, RelOptInfo *innerrel,
 								 JoinType jointype, JoinPathExtraData *extra);
@@ -470,7 +468,8 @@ paraminfo_get_equal_hashops(PlannerInfo *root, ParamPathInfo *param_info,
 			 * with 2 args.
 			 */
 			if (!IsA(opexpr, OpExpr) || list_length(opexpr->args) != 2 ||
-				!clause_sides_match_join(rinfo, outerrel, innerrel))
+				!clause_sides_match_join(rinfo, outerrel->relids,
+										 innerrel->relids))
 			{
 				list_free(*operators);
 				list_free(*param_exprs);
@@ -749,16 +748,22 @@ get_memoize_path(PlannerInfo *root, RelOptInfo *innerrel,
 	 *
 	 * Lateral vars needn't be considered here as they're not considered when
 	 * determining if the join is unique.
-	 *
-	 * XXX this could be enabled if the remaining join quals were made part of
-	 * the inner scan's filter instead of the join filter.  Maybe it's worth
-	 * considering doing that?
 	 */
-	if (extra->inner_unique &&
-		(inner_path->param_info == NULL ||
-		 bms_num_members(inner_path->param_info->ppi_serials) <
-		 list_length(extra->restrictlist)))
-		return NULL;
+	if (extra->inner_unique)
+	{
+		Bitmapset  *ppi_serials;
+
+		if (inner_path->param_info == NULL)
+			return NULL;
+
+		ppi_serials = inner_path->param_info->ppi_serials;
+
+		foreach_node(RestrictInfo, rinfo, extra->restrictlist)
+		{
+			if (!bms_is_member(rinfo->rinfo_serial, ppi_serials))
+				return NULL;
+		}
+	}
 
 	/*
 	 * We can't use a memoize node if there are volatile functions in the
@@ -1037,6 +1042,7 @@ try_mergejoin_path(PlannerInfo *root,
 				   bool is_partial)
 {
 	Relids		required_outer;
+	int			outer_presorted_keys = 0;
 	JoinCostWorkspace workspace;
 
 	if (is_partial)
@@ -1082,9 +1088,16 @@ try_mergejoin_path(PlannerInfo *root,
 	/*
 	 * If the given paths are already well enough ordered, we can skip doing
 	 * an explicit sort.
+	 *
+	 * We need to determine the number of presorted keys of the outer path to
+	 * decide whether explicit incremental sort can be applied when
+	 * outersortkeys is not NIL.  We do not need to do the same for the inner
+	 * path though, as incremental sort currently does not support
+	 * mark/restore.
 	 */
 	if (outersortkeys &&
-		pathkeys_contained_in(outersortkeys, outer_path->pathkeys))
+		pathkeys_count_contained_in(outersortkeys, outer_path->pathkeys,
+									&outer_presorted_keys))
 		outersortkeys = NIL;
 	if (innersortkeys &&
 		pathkeys_contained_in(innersortkeys, inner_path->pathkeys))
@@ -1096,6 +1109,7 @@ try_mergejoin_path(PlannerInfo *root,
 	initial_cost_mergejoin(root, &workspace, jointype, mergeclauses,
 						   outer_path, inner_path,
 						   outersortkeys, innersortkeys,
+						   outer_presorted_keys,
 						   extra);
 
 	if (add_path_precheck(joinrel, workspace.disabled_nodes,
@@ -1115,7 +1129,8 @@ try_mergejoin_path(PlannerInfo *root,
 									   required_outer,
 									   mergeclauses,
 									   outersortkeys,
-									   innersortkeys));
+									   innersortkeys,
+									   outer_presorted_keys));
 	}
 	else
 	{
@@ -1141,6 +1156,7 @@ try_partial_mergejoin_path(PlannerInfo *root,
 						   JoinType jointype,
 						   JoinPathExtraData *extra)
 {
+	int			outer_presorted_keys = 0;
 	JoinCostWorkspace workspace;
 
 	/*
@@ -1154,9 +1170,16 @@ try_partial_mergejoin_path(PlannerInfo *root,
 	/*
 	 * If the given paths are already well enough ordered, we can skip doing
 	 * an explicit sort.
+	 *
+	 * We need to determine the number of presorted keys of the outer path to
+	 * decide whether explicit incremental sort can be applied when
+	 * outersortkeys is not NIL.  We do not need to do the same for the inner
+	 * path though, as incremental sort currently does not support
+	 * mark/restore.
 	 */
 	if (outersortkeys &&
-		pathkeys_contained_in(outersortkeys, outer_path->pathkeys))
+		pathkeys_count_contained_in(outersortkeys, outer_path->pathkeys,
+									&outer_presorted_keys))
 		outersortkeys = NIL;
 	if (innersortkeys &&
 		pathkeys_contained_in(innersortkeys, inner_path->pathkeys))
@@ -1168,6 +1191,7 @@ try_partial_mergejoin_path(PlannerInfo *root,
 	initial_cost_mergejoin(root, &workspace, jointype, mergeclauses,
 						   outer_path, inner_path,
 						   outersortkeys, innersortkeys,
+						   outer_presorted_keys,
 						   extra);
 
 	if (!add_partial_path_precheck(joinrel, workspace.disabled_nodes,
@@ -1188,7 +1212,8 @@ try_partial_mergejoin_path(PlannerInfo *root,
 										   NULL,
 										   mergeclauses,
 										   outersortkeys,
-										   innersortkeys));
+										   innersortkeys,
+										   outer_presorted_keys));
 }
 
 /*
@@ -1318,37 +1343,6 @@ try_partial_hashjoin_path(PlannerInfo *root,
 										  extra->restrictlist,
 										  NULL,
 										  hashclauses));
-}
-
-/*
- * clause_sides_match_join
- *	  Determine whether a join clause is of the right form to use in this join.
- *
- * We already know that the clause is a binary opclause referencing only the
- * rels in the current join.  The point here is to check whether it has the
- * form "outerrel_expr op innerrel_expr" or "innerrel_expr op outerrel_expr",
- * rather than mixing outer and inner vars on either side.  If it matches,
- * we set the transient flag outer_is_left to identify which side is which.
- */
-static inline bool
-clause_sides_match_join(RestrictInfo *rinfo, RelOptInfo *outerrel,
-						RelOptInfo *innerrel)
-{
-	if (bms_is_subset(rinfo->left_relids, outerrel->relids) &&
-		bms_is_subset(rinfo->right_relids, innerrel->relids))
-	{
-		/* lefthand side is outer */
-		rinfo->outer_is_left = true;
-		return true;
-	}
-	else if (bms_is_subset(rinfo->left_relids, innerrel->relids) &&
-			 bms_is_subset(rinfo->right_relids, outerrel->relids))
-	{
-		/* righthand side is outer */
-		rinfo->outer_is_left = false;
-		return true;
-	}
-	return false;				/* no good for these input relations */
 }
 
 /*
@@ -2264,7 +2258,8 @@ hash_inner_and_outer(PlannerInfo *root,
 		/*
 		 * Check if clause has the form "outer op inner" or "inner op outer".
 		 */
-		if (!clause_sides_match_join(restrictinfo, outerrel, innerrel))
+		if (!clause_sides_match_join(restrictinfo, outerrel->relids,
+									 innerrel->relids))
 			continue;			/* no good for these input relations */
 
 		/*
@@ -2549,7 +2544,8 @@ select_mergejoin_clauses(PlannerInfo *root,
 		/*
 		 * Check if clause has the form "outer op inner" or "inner op outer".
 		 */
-		if (!clause_sides_match_join(restrictinfo, outerrel, innerrel))
+		if (!clause_sides_match_join(restrictinfo, outerrel->relids,
+									 innerrel->relids))
 		{
 			have_nonmergeable_joinclause = true;
 			continue;			/* no good for these input relations */

@@ -3,7 +3,7 @@
  * postgres_fdw.c
  *		  Foreign-data wrapper for remote PostgreSQL servers
  *
- * Portions Copyright (c) 2012-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2012-2025, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *		  contrib/postgres_fdw/postgres_fdw.c
@@ -17,11 +17,10 @@
 #include "access/htup_details.h"
 #include "access/sysattr.h"
 #include "access/table.h"
-#include "catalog/pg_class.h"
 #include "catalog/pg_opfamily.h"
 #include "commands/defrem.h"
-#include "commands/explain.h"
-#include "commands/vacuum.h"
+#include "commands/explain_format.h"
+#include "commands/explain_state.h"
 #include "executor/execAsync.h"
 #include "foreign/fdwapi.h"
 #include "funcapi.h"
@@ -29,7 +28,6 @@
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "optimizer/appendinfo.h"
-#include "optimizer/clauses.h"
 #include "optimizer/cost.h"
 #include "optimizer/inherit.h"
 #include "optimizer/optimizer.h"
@@ -51,7 +49,10 @@
 #include "utils/sampling.h"
 #include "utils/selfuncs.h"
 
-PG_MODULE_MAGIC;
+PG_MODULE_MAGIC_EXT(
+					.name = "postgres_fdw",
+					.version = PG_VERSION
+);
 
 /* Default CPU cost to start up a foreign query. */
 #define DEFAULT_FDW_STARTUP_COST	100.0
@@ -443,7 +444,7 @@ static void adjust_foreign_grouping_path_cost(PlannerInfo *root,
 											  double retrieved_rows,
 											  double width,
 											  double limit_tuples,
-											  int *disabled_nodes,
+											  int *p_disabled_nodes,
 											  Cost *p_startup_cost,
 											  Cost *p_run_cost);
 static bool ec_member_matches_foreign(PlannerInfo *root, RelOptInfo *rel,
@@ -633,7 +634,7 @@ postgresGetForeignRelSize(PlannerInfo *root,
 	 * functions.
 	 */
 	fpinfo = (PgFdwRelationInfo *) palloc0(sizeof(PgFdwRelationInfo));
-	baserel->fdw_private = (void *) fpinfo;
+	baserel->fdw_private = fpinfo;
 
 	/* Base foreign tables need to be pushed down always. */
 	fpinfo->pushdown_safe = true;
@@ -998,7 +999,7 @@ get_useful_pathkeys_for_relation(PlannerInfo *root, RelOptInfo *rel)
 		/* Looks like we can generate a pathkey, so let's do it. */
 		pathkey = make_canonical_pathkey(root, cur_ec,
 										 linitial_oid(cur_ec->ec_opfamilies),
-										 BTLessStrategyNumber,
+										 COMPARE_LT,
 										 false);
 		useful_pathkeys_list = lappend(useful_pathkeys_list,
 									   list_make1(pathkey));
@@ -1135,7 +1136,7 @@ postgresGetForeignPaths(PlannerInfo *root,
 			clauses = generate_implied_equalities_for_column(root,
 															 baserel,
 															 ec_member_matches_foreign,
-															 (void *) &arg,
+															 &arg,
 															 baserel->lateral_referencers);
 
 			/* Done if there are no more expressions in the foreign rel */
@@ -1517,7 +1518,7 @@ postgresBeginForeignScan(ForeignScanState *node, int eflags)
 	 * We'll save private state in node->fdw_state.
 	 */
 	fsstate = (PgFdwScanState *) palloc0(sizeof(PgFdwScanState));
-	node->fdw_state = (void *) fsstate;
+	node->fdw_state = fsstate;
 
 	/*
 	 * Identify which user to do the remote access as.  This should match what
@@ -1821,7 +1822,7 @@ postgresPlanForeignModify(PlannerInfo *root,
 
 		for (attnum = 1; attnum <= tupdesc->natts; attnum++)
 		{
-			Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
+			CompactAttribute *attr = TupleDescCompactAttr(tupdesc, attnum - 1);
 
 			if (!attr->attisdropped)
 				targetAttrs = lappend_int(targetAttrs, attnum);
@@ -2194,7 +2195,7 @@ postgresBeginForeignInsert(ModifyTableState *mtstate,
 	/* We transmit all columns that are defined in the foreign table. */
 	for (attnum = 1; attnum <= tupdesc->natts; attnum++)
 	{
-		Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
+		CompactAttribute *attr = TupleDescCompactAttr(tupdesc, attnum - 1);
 
 		if (!attr->attisdropped)
 			targetAttrs = lappend_int(targetAttrs, attnum);
@@ -2667,7 +2668,7 @@ postgresBeginDirectModify(ForeignScanState *node, int eflags)
 	 * We'll save private state in node->fdw_state.
 	 */
 	dmstate = (PgFdwDirectModifyState *) palloc0(sizeof(PgFdwDirectModifyState));
-	node->fdw_state = (void *) dmstate;
+	node->fdw_state = dmstate;
 
 	/*
 	 * Identify which user to do the remote access as.  This should match what
@@ -3335,7 +3336,7 @@ estimate_path_cost_size(PlannerInfo *root,
 		{
 			RelOptInfo *outerrel = fpinfo->outerrel;
 			PgFdwRelationInfo *ofpinfo;
-			AggClauseCosts aggcosts;
+			AggClauseCosts aggcosts = {0};
 			double		input_rows;
 			int			numGroupCols;
 			double		numGroups = 1;
@@ -3359,7 +3360,6 @@ estimate_path_cost_size(PlannerInfo *root,
 			input_rows = ofpinfo->rows;
 
 			/* Collect statistics about aggregates for estimating costs. */
-			MemSet(&aggcosts, 0, sizeof(AggClauseCosts));
 			if (root->parse->hasAggs)
 			{
 				get_agg_clause_costs(root, AGGSPLIT_SIMPLE, &aggcosts);
@@ -4314,7 +4314,7 @@ convert_prep_stmt_params(PgFdwModifyState *fmstate,
 			foreach(lc, fmstate->target_attrs)
 			{
 				int			attnum = lfirst_int(lc);
-				Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
+				CompactAttribute *attr = TupleDescCompactAttr(tupdesc, attnum - 1);
 				Datum		value;
 				bool		isnull;
 
@@ -5663,13 +5663,13 @@ postgresImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid)
 				attname = PQgetvalue(res, i, 1);
 				typename = PQgetvalue(res, i, 2);
 				attnotnull = PQgetvalue(res, i, 3);
-				attdefault = PQgetisnull(res, i, 4) ? (char *) NULL :
+				attdefault = PQgetisnull(res, i, 4) ? NULL :
 					PQgetvalue(res, i, 4);
-				attgenerated = PQgetisnull(res, i, 5) ? (char *) NULL :
+				attgenerated = PQgetisnull(res, i, 5) ? NULL :
 					PQgetvalue(res, i, 5);
-				collname = PQgetisnull(res, i, 6) ? (char *) NULL :
+				collname = PQgetisnull(res, i, 6) ? NULL :
 					PQgetvalue(res, i, 6);
-				collnamespace = PQgetisnull(res, i, 7) ? (char *) NULL :
+				collnamespace = PQgetisnull(res, i, 7) ? NULL :
 					PQgetvalue(res, i, 7);
 
 				if (first_item)
@@ -5771,8 +5771,7 @@ semijoin_target_ok(PlannerInfo *root, RelOptInfo *joinrel, RelOptInfo *outerrel,
 		if (!IsA(var, Var))
 			continue;
 
-		if (bms_is_member(var->varno, innerrel->relids) &&
-			!bms_is_member(var->varno, outerrel->relids))
+		if (bms_is_member(var->varno, innerrel->relids))
 		{
 			/*
 			 * The planner can create semi-join, which refers to inner rel
@@ -5780,6 +5779,7 @@ semijoin_target_ok(PlannerInfo *root, RelOptInfo *joinrel, RelOptInfo *outerrel,
 			 * exists() subquery, so can't handle references to inner rel in
 			 * the target list.
 			 */
+			Assert(!bms_is_member(var->varno, outerrel->relids));
 			ok = false;
 			break;
 		}
@@ -5966,17 +5966,33 @@ foreign_join_ok(PlannerInfo *root, RelOptInfo *joinrel, JoinType jointype,
 			break;
 
 		case JOIN_LEFT:
-			fpinfo->joinclauses = list_concat(fpinfo->joinclauses,
-											  fpinfo_i->remote_conds);
-			fpinfo->remote_conds = list_concat(fpinfo->remote_conds,
-											   fpinfo_o->remote_conds);
+
+			/*
+			 * When semi-join is involved in the inner or outer part of the
+			 * left join, it's deparsed as a subquery, and we can't refer to
+			 * its vars on the upper level.
+			 */
+			if (bms_is_empty(fpinfo_i->hidden_subquery_rels))
+				fpinfo->joinclauses = list_concat(fpinfo->joinclauses,
+												  fpinfo_i->remote_conds);
+			if (bms_is_empty(fpinfo_o->hidden_subquery_rels))
+				fpinfo->remote_conds = list_concat(fpinfo->remote_conds,
+												   fpinfo_o->remote_conds);
 			break;
 
 		case JOIN_RIGHT:
-			fpinfo->joinclauses = list_concat(fpinfo->joinclauses,
-											  fpinfo_o->remote_conds);
-			fpinfo->remote_conds = list_concat(fpinfo->remote_conds,
-											   fpinfo_i->remote_conds);
+
+			/*
+			 * When semi-join is involved in the inner or outer part of the
+			 * right join, it's deparsed as a subquery, and we can't refer to
+			 * its vars on the upper level.
+			 */
+			if (bms_is_empty(fpinfo_o->hidden_subquery_rels))
+				fpinfo->joinclauses = list_concat(fpinfo->joinclauses,
+												  fpinfo_o->remote_conds);
+			if (bms_is_empty(fpinfo_i->hidden_subquery_rels))
+				fpinfo->remote_conds = list_concat(fpinfo->remote_conds,
+												   fpinfo_i->remote_conds);
 			break;
 
 		case JOIN_SEMI:
@@ -7621,7 +7637,7 @@ make_tuple_from_result_row(PGresult *res,
 	errpos.rel = rel;
 	errpos.fsstate = fsstate;
 	errcallback.callback = conversion_error_callback;
-	errcallback.arg = (void *) &errpos;
+	errcallback.arg = &errpos;
 	errcallback.previous = error_context_stack;
 	error_context_stack = &errcallback;
 
@@ -7831,14 +7847,13 @@ conversion_error_callback(void *arg)
 EquivalenceMember *
 find_em_for_rel(PlannerInfo *root, EquivalenceClass *ec, RelOptInfo *rel)
 {
-	ListCell   *lc;
-
 	PgFdwRelationInfo *fpinfo = (PgFdwRelationInfo *) rel->fdw_private;
+	EquivalenceMemberIterator it;
+	EquivalenceMember *em;
 
-	foreach(lc, ec->ec_members)
+	setup_eclass_member_iterator(&it, ec, rel->relids);
+	while ((em = eclass_member_iterator_next(&it)) != NULL)
 	{
-		EquivalenceMember *em = (EquivalenceMember *) lfirst(lc);
-
 		/*
 		 * Note we require !bms_is_empty, else we'd accept constant
 		 * expressions which are not suitable for the purpose.
@@ -7892,7 +7907,10 @@ find_em_for_rel_target(PlannerInfo *root, EquivalenceClass *ec,
 		while (expr && IsA(expr, RelabelType))
 			expr = ((RelabelType *) expr)->arg;
 
-		/* Locate an EquivalenceClass member matching this expr, if any */
+		/*
+		 * Locate an EquivalenceClass member matching this expr, if any.
+		 * Ignore child members.
+		 */
 		foreach(lc2, ec->ec_members)
 		{
 			EquivalenceMember *em = (EquivalenceMember *) lfirst(lc2);
@@ -7902,9 +7920,8 @@ find_em_for_rel_target(PlannerInfo *root, EquivalenceClass *ec,
 			if (em->em_is_const)
 				continue;
 
-			/* Ignore child members */
-			if (em->em_is_child)
-				continue;
+			/* Child members should not exist in ec_members */
+			Assert(!em->em_is_child);
 
 			/* Match if same expression (after stripping relabel) */
 			em_expr = em->em_expr;

@@ -2,7 +2,7 @@
  *
  * walmethods.c - implementations of different ways to write received wal
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *		  src/bin/pg_basebackup/walmethods.c
@@ -11,6 +11,7 @@
 
 #include "postgres_fe.h"
 
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
@@ -26,8 +27,7 @@
 #include "common/file_utils.h"
 #include "common/logging.h"
 #include "pgtar.h"
-#include "receivelog.h"
-#include "streamutil.h"
+#include "walmethods.h"
 
 /* Size of zlib buffer for .tar.gz */
 #define ZLIB_OUT_SIZE 4096
@@ -691,7 +691,7 @@ static const WalWriteMethodOps WalTarMethodOps = {
 typedef struct TarMethodFile
 {
 	Walfile		base;
-	off_t		ofs_start;		/* Where does the *header* for this file start */
+	pgoff_t		ofs_start;		/* Where does the *header* for this file start */
 	char		header[TAR_BLOCK_SIZE];
 	size_t		pad_to_size;
 } TarMethodFile;

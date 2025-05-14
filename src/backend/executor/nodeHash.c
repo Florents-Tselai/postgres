@@ -3,7 +3,7 @@
  * nodeHash.c
  *	  Routines to hash relations for hashjoin
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -35,7 +35,6 @@
 #include "executor/nodeHash.h"
 #include "executor/nodeHashjoin.h"
 #include "miscadmin.h"
-#include "port/atomics.h"
 #include "port/pg_bitutils.h"
 #include "utils/dynahash.h"
 #include "utils/lsyscache.h"
@@ -849,6 +848,90 @@ ExecChooseHashTableSize(double ntuples, int tupwidth, bool useskew,
 		nbatch = pg_nextpower2_32(Max(2, minbatch));
 	}
 
+	/*
+	 * Optimize the total amount of memory consumed by the hash node.
+	 *
+	 * The nbatch calculation above focuses on the size of the in-memory hash
+	 * table, assuming no per-batch overhead. Now adjust the number of batches
+	 * and the size of the hash table to minimize total memory consumed by the
+	 * hash node.
+	 *
+	 * Each batch file has a BLCKSZ buffer, and we may need two files per
+	 * batch (inner and outer side). So with enough batches this can be
+	 * significantly more memory than the hashtable itself.
+	 *
+	 * The total memory usage may be expressed by this formula:
+	 *
+	 * (inner_rel_bytes / nbatch) + (2 * nbatch * BLCKSZ) <= hash_table_bytes
+	 *
+	 * where (inner_rel_bytes / nbatch) is the size of the in-memory hash
+	 * table and (2 * nbatch * BLCKSZ) is the amount of memory used by file
+	 * buffers. But for sufficiently large values of inner_rel_bytes value
+	 * there may not be a nbatch value that would make both parts fit into
+	 * hash_table_bytes.
+	 *
+	 * In this case we can't enforce the memory limit - we're going to exceed
+	 * it. We can however minimize the impact and use as little memory as
+	 * possible. (We haven't really enforced it before either, as we simply
+	 * ignored the batch files.)
+	 *
+	 * The formula for total memory usage says that given an inner relation of
+	 * size inner_rel_bytes, we may divide it into an arbitrary number of
+	 * batches. This determines both the size of the in-memory hash table and
+	 * the amount of memory needed for batch files. These two terms work in
+	 * opposite ways - when one decreases, the other increases.
+	 *
+	 * For low nbatch values, the hash table takes most of the memory, but at
+	 * some point the batch files start to dominate. If you combine these two
+	 * terms, the memory consumption (for a fixed size of the inner relation)
+	 * has a u-shape, with a minimum at some nbatch value.
+	 *
+	 * Our goal is to find this nbatch value, minimizing the memory usage. We
+	 * calculate the memory usage with half the batches (i.e. nbatch/2), and
+	 * if it's lower than the current memory usage we know it's better to use
+	 * fewer batches. We repeat this until reducing the number of batches does
+	 * not reduce the memory usage - we found the optimum. We know the optimum
+	 * exists, thanks to the u-shape.
+	 *
+	 * We only want to do this when exceeding the memory limit, not every
+	 * time. The goal is not to minimize memory usage in every case, but to
+	 * minimize the memory usage when we can't stay within the memory limit.
+	 *
+	 * For this reason we only consider reducing the number of batches. We
+	 * could try the opposite direction too, but that would save memory only
+	 * when most of the memory is used by the hash table. And the hash table
+	 * was used for the initial sizing, so we shouldn't be exceeding the
+	 * memory limit too much. We might save memory by using more batches, but
+	 * it would result in spilling more batch files, which does not seem like
+	 * a great trade off.
+	 *
+	 * While growing the hashtable, we also adjust the number of buckets, to
+	 * not have more than one tuple per bucket (load factor 1). We can only do
+	 * this during the initial sizing - once we start building the hash,
+	 * nbucket is fixed.
+	 */
+	while (nbatch > 0)
+	{
+		/* how much memory are we using with current nbatch value */
+		size_t		current_space = hash_table_bytes + (2 * nbatch * BLCKSZ);
+
+		/* how much memory would we use with half the batches */
+		size_t		new_space = hash_table_bytes * 2 + (nbatch * BLCKSZ);
+
+		/* If the memory usage would not decrease, we found the optimum. */
+		if (current_space < new_space)
+			break;
+
+		/*
+		 * It's better to use half the batches, so do that and adjust the
+		 * nbucket in the opposite direction, and double the allowance.
+		 */
+		nbatch /= 2;
+		nbuckets *= 2;
+
+		*space_allowed = (*space_allowed) * 2;
+	}
+
 	Assert(nbuckets > 0);
 	Assert(nbatch > 0);
 
@@ -892,6 +975,47 @@ ExecHashTableDestroy(HashJoinTable hashtable)
 }
 
 /*
+ * Consider adjusting the allowed hash table size, depending on the number
+ * of batches, to minimize the overall memory usage (for both the hashtable
+ * and batch files).
+ *
+ * We're adjusting the size of the hash table, not the (optimal) number of
+ * buckets. We can't change that once we start building the hash, due to how
+ * ExecHashGetBucketAndBatch calculates batchno/bucketno from the hash. This
+ * means the load factor may not be optimal, but we're in damage control so
+ * we accept slower lookups. It's still much better than batch explosion.
+ *
+ * Returns true if we chose to increase the batch size (and thus we don't
+ * need to add batches), and false if we should increase nbatch.
+ */
+static bool
+ExecHashIncreaseBatchSize(HashJoinTable hashtable)
+{
+	/*
+	 * How much additional memory would doubling nbatch use? Each batch may
+	 * require two buffered files (inner/outer), with a BLCKSZ buffer.
+	 */
+	size_t		batchSpace = (hashtable->nbatch * 2 * BLCKSZ);
+
+	/*
+	 * Compare the new space needed for doubling nbatch and for enlarging the
+	 * in-memory hash table. If doubling the hash table needs less memory,
+	 * just do that. Otherwise, continue with doubling the nbatch.
+	 *
+	 * We're either doubling spaceAllowed of batchSpace, so which of those
+	 * increases the memory usage the least is the same as comparing the
+	 * values directly.
+	 */
+	if (hashtable->spaceAllowed <= batchSpace)
+	{
+		hashtable->spaceAllowed *= 2;
+		return true;
+	}
+
+	return false;
+}
+
+/*
  * ExecHashIncreaseNumBatches
  *		increase the original number of batches in order to reduce
  *		current memory consumption
@@ -912,6 +1036,10 @@ ExecHashIncreaseNumBatches(HashJoinTable hashtable)
 
 	/* safety check to avoid overflow */
 	if (oldnbatch > Min(INT_MAX / 2, MaxAllocSize / (sizeof(void *) * 2)))
+		return;
+
+	/* consider increasing size of the in-memory hash table instead */
+	if (ExecHashIncreaseBatchSize(hashtable))
 		return;
 
 	nbatch = oldnbatch * 2;
@@ -1228,6 +1356,7 @@ ExecParallelHashIncreaseNumBatches(HashJoinTable hashtable)
 			if (BarrierArriveAndWait(&pstate->grow_batches_barrier,
 									 WAIT_EVENT_HASH_GROW_BATCHES_DECIDE))
 			{
+				ParallelHashJoinBatch *old_batches;
 				bool		space_exhausted = false;
 				bool		extreme_skew_detected = false;
 
@@ -1235,25 +1364,31 @@ ExecParallelHashIncreaseNumBatches(HashJoinTable hashtable)
 				ExecParallelHashEnsureBatchAccessors(hashtable);
 				ExecParallelHashTableSetCurrentBatch(hashtable, 0);
 
+				old_batches = dsa_get_address(hashtable->area, pstate->old_batches);
+
 				/* Are any of the new generation of batches exhausted? */
 				for (int i = 0; i < hashtable->nbatch; ++i)
 				{
-					ParallelHashJoinBatch *batch = hashtable->batches[i].shared;
+					ParallelHashJoinBatch *batch;
+					ParallelHashJoinBatch *old_batch;
+					int			parent;
 
+					batch = hashtable->batches[i].shared;
 					if (batch->space_exhausted ||
 						batch->estimated_size > pstate->space_allowed)
-					{
-						int			parent;
-
 						space_exhausted = true;
 
+					parent = i % pstate->old_nbatch;
+					old_batch = NthParallelHashJoinBatch(old_batches, parent);
+					if (old_batch->space_exhausted ||
+						batch->estimated_size > pstate->space_allowed)
+					{
 						/*
 						 * Did this batch receive ALL of the tuples from its
 						 * parent batch?  That would indicate that further
 						 * repartitioning isn't going to help (the hash values
 						 * are probably all the same).
 						 */
-						parent = i % pstate->old_nbatch;
 						if (batch->ntuples == hashtable->batches[parent].shared->old_ntuples)
 							extreme_skew_detected = true;
 					}

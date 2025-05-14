@@ -36,10 +36,12 @@
 #include "miscadmin.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
-#include "utils/builtins.h"
 #include "utils/varlena.h"
 
-PG_MODULE_MAGIC;
+PG_MODULE_MAGIC_EXT(
+					.name = "pgstattuple",
+					.version = PG_VERSION
+);
 
 PG_FUNCTION_INFO_V1(pgstattuple);
 PG_FUNCTION_INFO_V1(pgstattuple_v1_5);

@@ -3,7 +3,7 @@
  * genam.c
  *	  general index access method routines
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -119,6 +119,7 @@ RelationGetIndexScan(Relation indexRelation, int nkeys, int norderbys)
 	scan->ignore_killed_tuples = !scan->xactStartedInRecovery;
 
 	scan->opaque = NULL;
+	scan->instrument = NULL;
 
 	scan->xs_itup = NULL;
 	scan->xs_itupdesc = NULL;
@@ -446,9 +447,11 @@ systable_beginscan(Relation heapRelation,
 		}
 
 		sysscan->iscan = index_beginscan(heapRelation, irel,
-										 snapshot, nkeys, 0);
+										 snapshot, NULL, nkeys, 0);
 		index_rescan(sysscan->iscan, idxkey, nkeys, NULL, 0);
 		sysscan->scan = NULL;
+
+		pfree(idxkey);
 	}
 	else
 	{
@@ -574,17 +577,13 @@ systable_recheck_tuple(SysScanDesc sysscan, HeapTuple tup)
 
 	Assert(tup == ExecFetchSlotHeapTuple(sysscan->slot, false, NULL));
 
-	/*
-	 * Trust that table_tuple_satisfies_snapshot() and its subsidiaries
-	 * (commonly LockBuffer() and HeapTupleSatisfiesMVCC()) do not themselves
-	 * acquire snapshots, so we need not register the snapshot.  Those
-	 * facilities are too low-level to have any business scanning tables.
-	 */
 	freshsnap = GetCatalogSnapshot(RelationGetRelid(sysscan->heap_rel));
+	freshsnap = RegisterSnapshot(freshsnap);
 
 	result = table_tuple_satisfies_snapshot(sysscan->heap_rel,
 											sysscan->slot,
 											freshsnap);
+	UnregisterSnapshot(freshsnap);
 
 	/*
 	 * Handle the concurrent abort while fetching the catalog tuple during
@@ -709,9 +708,19 @@ systable_beginscan_ordered(Relation heapRelation,
 	}
 
 	sysscan->iscan = index_beginscan(heapRelation, indexRelation,
-									 snapshot, nkeys, 0);
+									 snapshot, NULL, nkeys, 0);
 	index_rescan(sysscan->iscan, idxkey, nkeys, NULL, 0);
 	sysscan->scan = NULL;
+
+	pfree(idxkey);
+
+	/*
+	 * If CheckXidAlive is set then set a flag to indicate that system table
+	 * scan is in-progress.  See detailed comments in xact.c where these
+	 * variables are declared.
+	 */
+	if (TransactionIdIsValid(CheckXidAlive))
+		bsysscan = true;
 
 	return sysscan;
 }
@@ -757,6 +766,14 @@ systable_endscan_ordered(SysScanDesc sysscan)
 	index_endscan(sysscan->iscan);
 	if (sysscan->snapshot)
 		UnregisterSnapshot(sysscan->snapshot);
+
+	/*
+	 * Reset the bsysscan flag at the end of the systable scan.  See detailed
+	 * comments in xact.c where these variables are declared.
+	 */
+	if (TransactionIdIsValid(CheckXidAlive))
+		bsysscan = false;
+
 	pfree(sysscan);
 }
 
@@ -798,6 +815,7 @@ systable_inplace_update_begin(Relation relation,
 	int			retries = 0;
 	SysScanDesc scan;
 	HeapTuple	oldtup;
+	BufferHeapTupleTableSlot *bslot;
 
 	/*
 	 * For now, we don't allow parallel updates.  Unlike a regular update,
@@ -819,10 +837,9 @@ systable_inplace_update_begin(Relation relation,
 	Assert(IsInplaceUpdateRelation(relation) || !IsSystemRelation(relation));
 
 	/* Loop for an exclusive-locked buffer of a non-updated tuple. */
-	for (;;)
+	do
 	{
 		TupleTableSlot *slot;
-		BufferHeapTupleTableSlot *bslot;
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -834,7 +851,7 @@ systable_inplace_update_begin(Relation relation,
 		if (retries++ > 10000)
 			elog(ERROR, "giving up after too many tries to overwrite row");
 
-		INJECTION_POINT("inplace-before-pin");
+		INJECTION_POINT("inplace-before-pin", NULL);
 		scan = systable_beginscan(relation, indexId, indexOK, snapshot,
 								  nkeys, unconstify(ScanKeyData *, key));
 		oldtup = systable_getnext(scan);
@@ -848,11 +865,9 @@ systable_inplace_update_begin(Relation relation,
 		slot = scan->slot;
 		Assert(TTS_IS_BUFFERTUPLE(slot));
 		bslot = (BufferHeapTupleTableSlot *) slot;
-		if (heap_inplace_lock(scan->heap_rel,
-							  bslot->base.tuple, bslot->buffer))
-			break;
-		systable_endscan(scan);
-	};
+	} while (!heap_inplace_lock(scan->heap_rel,
+								bslot->base.tuple, bslot->buffer,
+								(void (*) (void *)) systable_endscan, scan));
 
 	*oldtupcopy = heap_copytuple(oldtup);
 	*state = scan;

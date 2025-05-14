@@ -3,7 +3,7 @@
  * jsonapi.h
  *	  Declarations for JSON API support.
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/common/jsonapi.h
@@ -92,9 +92,11 @@ typedef struct JsonIncrementalState JsonIncrementalState;
  * conjunction with token_start.
  *
  * JSONLEX_FREE_STRUCT/STRVAL are used to drive freeJsonLexContext.
+ * JSONLEX_CTX_OWNS_TOKENS is used by setJsonLexContextOwnsTokens.
  */
 #define JSONLEX_FREE_STRUCT			(1 << 0)
 #define JSONLEX_FREE_STRVAL			(1 << 1)
+#define JSONLEX_CTX_OWNS_TOKENS		(1 << 2)
 typedef struct JsonLexContext
 {
 	const char *input;
@@ -116,6 +118,12 @@ typedef struct JsonLexContext
 	struct jsonapi_StrValType *errormsg;
 } JsonLexContext;
 
+/*
+ * Function types for custom json parsing actions.
+ *
+ * fname will be NULL if the context has need_escapes=false, as will token for
+ * string type values.
+ */
 typedef JsonParseErrorType (*json_struct_action) (void *state);
 typedef JsonParseErrorType (*json_ofield_action) (void *state, char *fname, bool isnull);
 typedef JsonParseErrorType (*json_aelem_action) (void *state, bool isnull);
@@ -130,9 +138,10 @@ typedef JsonParseErrorType (*json_scalar_action) (void *state, char *token, Json
  * to doing a pure parse with no side-effects, and is therefore exactly
  * what the json input routines do.
  *
- * The 'fname' and 'token' strings passed to these actions are palloc'd.
- * They are not free'd or used further by the parser, so the action function
- * is free to do what it wishes with them.
+ * By default, the 'fname' and 'token' strings passed to these actions are
+ * palloc'd.  They are not free'd or used further by the parser, so the action
+ * function is free to do what it wishes with them. This behavior may be
+ * modified by setJsonLexContextOwnsTokens().
  *
  * All action functions return JsonParseErrorType.  If the result isn't
  * JSON_SUCCESS, the parse is abandoned and that error code is returned.
@@ -194,12 +203,17 @@ extern JsonParseErrorType json_count_array_elements(JsonLexContext *lex,
  * struct is allocated.
  *
  * If need_escapes is true, ->strval stores the unescaped lexemes.
+ *
+ * Setting need_escapes to true is necessary if the operation needs
+ * to reference field names or scalar string values. This is true of most
+ * operations beyond purely checking the json-validity of the source
+ * document.
+ *
  * Unescaping is expensive, so only request it when necessary.
  *
  * If need_escapes is true or lex was given as NULL, then the caller is
  * responsible for freeing the returned struct, either by calling
- * freeJsonLexContext() or (in backend environment) via memory context
- * cleanup.
+ * freeJsonLexContext() or (in backends) via memory context cleanup.
  */
 extern JsonLexContext *makeJsonLexContextCstringLen(JsonLexContext *lex,
 													const char *json,
@@ -215,6 +229,25 @@ extern JsonLexContext *makeJsonLexContextCstringLen(JsonLexContext *lex,
 extern JsonLexContext *makeJsonLexContextIncremental(JsonLexContext *lex,
 													 int encoding,
 													 bool need_escapes);
+
+/*
+ * Sets whether tokens passed to semantic action callbacks are owned by the
+ * context (in which case, the callback must duplicate the tokens for long-term
+ * storage) or by the callback (in which case, the callback must explicitly
+ * free tokens to avoid leaks).
+ *
+ * By default, this setting is false: the callback owns the tokens that are
+ * passed to it (and if parsing fails between the two object-field callbacks,
+ * the field name token will likely leak). If set to true, tokens will be freed
+ * by the lexer after the callback completes.
+ *
+ * Setting this to true is important for long-lived clients (such as libpq)
+ * that must not leak memory during a parse failure. For a server backend using
+ * memory contexts, or a client application which will exit on parse failure,
+ * this setting is less critical.
+ */
+extern void setJsonLexContextOwnsTokens(JsonLexContext *lex,
+										bool owned_by_context);
 
 extern void freeJsonLexContext(JsonLexContext *lex);
 

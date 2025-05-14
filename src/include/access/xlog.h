@@ -3,7 +3,7 @@
  *
  * PostgreSQL write-ahead log manager
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/access/xlog.h
@@ -167,6 +167,7 @@ typedef struct CheckpointStatsData
 	TimestampTz ckpt_end_t;		/* end of checkpoint */
 
 	int			ckpt_bufs_written;	/* # of buffers written */
+	int			ckpt_slru_written;	/* # of SLRU buffers written */
 
 	int			ckpt_segs_added;	/* # of new xlog segments created */
 	int			ckpt_segs_removed;	/* # of xlog segments deleted */
@@ -230,6 +231,7 @@ extern XLogRecPtr GetXLogWriteRecPtr(void);
 extern uint64 GetSystemIdentifier(void);
 extern char *GetMockAuthenticationNonce(void);
 extern bool DataChecksumsEnabled(void);
+extern bool GetDefaultCharSignedness(void);
 extern XLogRecPtr GetFakeLSNForUnloggedRel(void);
 extern Size XLOGShmemSize(void);
 extern void XLOGShmemInit(void);
@@ -239,7 +241,7 @@ extern void LocalProcessControlFile(bool reset);
 extern WalLevel GetActiveWalLevelOnStandby(void);
 extern void StartupXLOG(void);
 extern void ShutdownXLOG(int code, Datum arg);
-extern void CreateCheckPoint(int flags);
+extern bool CreateCheckPoint(int flags);
 extern bool CreateRestartPoint(int flags);
 extern WALAvailability GetWALAvailability(XLogRecPtr targetLSN);
 extern void XLogPutNextOid(Oid nextOid);

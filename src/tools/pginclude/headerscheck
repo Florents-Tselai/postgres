@@ -13,7 +13,7 @@
 # No output if everything is OK, else compiler errors.
 #
 # src/tools/pginclude/headerscheck
-# Copyright (c) 2009-2024, PostgreSQL Global Development Group
+# Copyright (c) 2009-2025, PostgreSQL Global Development Group
 
 # option to check for C++ compatibility
 if [ "$1" = "--cplusplus" ]; then
@@ -167,6 +167,9 @@ do
 
 	# This produces a "no previous prototype" warning.
 	! $cplusplus && test "$f" = src/include/storage/checksum_impl.h && continue
+
+	# SectionMemoryManager.h is C++
+	test "$f" = src/include/jit/SectionMemoryManager.h && continue
 
 	# ppport.h is not under our control, so we can't make it standalone.
 	test "$f" = src/pl/plperl/ppport.h && continue

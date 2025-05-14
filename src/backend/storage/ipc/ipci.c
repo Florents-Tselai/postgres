@@ -3,7 +3,7 @@
  * ipci.c
  *	  POSTGRES inter-process communication initialization code.
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -25,13 +25,11 @@
 #include "access/xlogprefetcher.h"
 #include "access/xlogrecovery.h"
 #include "commands/async.h"
-#include "commands/waitlsn.h"
 #include "miscadmin.h"
 #include "pgstat.h"
 #include "postmaster/autovacuum.h"
 #include "postmaster/bgworker_internals.h"
 #include "postmaster/bgwriter.h"
-#include "postmaster/postmaster.h"
 #include "postmaster/walsummarizer.h"
 #include "replication/logicallauncher.h"
 #include "replication/origin.h"
@@ -39,6 +37,7 @@
 #include "replication/slotsync.h"
 #include "replication/walreceiver.h"
 #include "replication/walsender.h"
+#include "storage/aio_subsys.h"
 #include "storage/bufmgr.h"
 #include "storage/dsm.h"
 #include "storage/dsm_registry.h"
@@ -50,9 +49,9 @@
 #include "storage/procarray.h"
 #include "storage/procsignal.h"
 #include "storage/sinvaladt.h"
-#include "storage/spin.h"
 #include "utils/guc.h"
 #include "utils/injection_point.h"
+#include "utils/memutils.h"
 
 /* GUCs */
 int			shared_memory_type = DEFAULT_SHARED_MEMORY_TYPE;
@@ -151,7 +150,8 @@ CalculateShmemSize(int *num_semaphores)
 	size = add_size(size, WaitEventCustomShmemSize());
 	size = add_size(size, InjectionPointShmemSize());
 	size = add_size(size, SlotSyncShmemSize());
-	size = add_size(size, WaitLSNShmemSize());
+	size = add_size(size, AioShmemSize());
+	size = add_size(size, MemoryContextReportingShmemSize());
 
 	/* include additional requested shmem from preload libraries */
 	size = add_size(size, total_addin_request);
@@ -344,7 +344,8 @@ CreateOrAttachShmemStructs(void)
 	StatsShmemInit();
 	WaitEventCustomShmemInit();
 	InjectionPointShmemInit();
-	WaitLSNShmemInit();
+	AioShmemInit();
+	MemoryContextReportingShmemInit();
 }
 
 /*

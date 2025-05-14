@@ -10,7 +10,7 @@
  * backup manifest supplied by the user taking the incremental backup
  * and extract the required information from it.
  *
- * Portions Copyright (c) 2010-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 2010-2025, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/backup/basebackup_incremental.c
@@ -27,9 +27,7 @@
 #include "common/hashfn.h"
 #include "common/int.h"
 #include "common/parse_manifest.h"
-#include "datatype/timestamp.h"
 #include "postmaster/walsummarizer.h"
-#include "utils/timestamp.h"
 
 #define	BLOCKS_PER_READ			512
 
@@ -58,7 +56,7 @@ typedef struct
 {
 	uint32		status;
 	const char *path;
-	size_t		size;
+	uint64		size;
 } backup_file_entry;
 
 static uint32 hash_string_pointer(const char *s);
@@ -133,7 +131,7 @@ static void manifest_process_system_identifier(JsonManifestParseContext *context
 											   uint64 manifest_system_identifier);
 static void manifest_process_file(JsonManifestParseContext *context,
 								  const char *pathname,
-								  size_t size,
+								  uint64 size,
 								  pg_checksum_type checksum_type,
 								  int checksum_length,
 								  uint8 *checksum_payload);
@@ -141,9 +139,9 @@ static void manifest_process_wal_range(JsonManifestParseContext *context,
 									   TimeLineID tli,
 									   XLogRecPtr start_lsn,
 									   XLogRecPtr end_lsn);
-static void manifest_report_error(JsonManifestParseContext *context,
-								  const char *fmt,...)
-			pg_attribute_printf(2, 3) pg_attribute_noreturn();
+pg_noreturn static void manifest_report_error(JsonManifestParseContext *context,
+											  const char *fmt,...)
+			pg_attribute_printf(2, 3);
 static int	compare_block_numbers(const void *a, const void *b);
 
 /*
@@ -207,8 +205,8 @@ AppendIncrementalManifestData(IncrementalBackupInfo *ib, const char *data,
 		 * time for an incremental parse. We'll do all but the last MIN_CHUNK
 		 * so that we have enough left for the final piece.
 		 */
-		json_parse_manifest_incremental_chunk(
-											  ib->inc_state, ib->buf.data, ib->buf.len - MIN_CHUNK, false);
+		json_parse_manifest_incremental_chunk(ib->inc_state, ib->buf.data,
+											  ib->buf.len - MIN_CHUNK, false);
 		/* now remove what we just parsed  */
 		memmove(ib->buf.data, ib->buf.data + (ib->buf.len - MIN_CHUNK),
 				MIN_CHUNK + 1);
@@ -234,8 +232,8 @@ FinalizeIncrementalManifest(IncrementalBackupInfo *ib)
 	oldcontext = MemoryContextSwitchTo(ib->mcxt);
 
 	/* Parse the last chunk of the manifest */
-	json_parse_manifest_incremental_chunk(
-										  ib->inc_state, ib->buf.data, ib->buf.len, true);
+	json_parse_manifest_incremental_chunk(ib->inc_state, ib->buf.data,
+										  ib->buf.len, true);
 
 	/* Done with the buffer, so release memory. */
 	pfree(ib->buf.data);
@@ -627,23 +625,21 @@ char *
 GetIncrementalFilePath(Oid dboid, Oid spcoid, RelFileNumber relfilenumber,
 					   ForkNumber forknum, unsigned segno)
 {
-	char	   *path;
+	RelPathStr	path;
 	char	   *lastslash;
 	char	   *ipath;
 
 	path = GetRelationPath(dboid, spcoid, relfilenumber, INVALID_PROC_NUMBER,
 						   forknum);
 
-	lastslash = strrchr(path, '/');
+	lastslash = strrchr(path.str, '/');
 	Assert(lastslash != NULL);
 	*lastslash = '\0';
 
 	if (segno > 0)
-		ipath = psprintf("%s/INCREMENTAL.%s.%u", path, lastslash + 1, segno);
+		ipath = psprintf("%s/INCREMENTAL.%s.%u", path.str, lastslash + 1, segno);
 	else
-		ipath = psprintf("%s/INCREMENTAL.%s", path, lastslash + 1);
-
-	pfree(path);
+		ipath = psprintf("%s/INCREMENTAL.%s", path.str, lastslash + 1);
 
 	return ipath;
 }
@@ -953,9 +949,9 @@ manifest_process_system_identifier(JsonManifestParseContext *context,
 
 	if (manifest_system_identifier != system_identifier)
 		context->error_cb(context,
-						  "system identifier in backup manifest is %llu, but database system identifier is %llu",
-						  (unsigned long long) manifest_system_identifier,
-						  (unsigned long long) system_identifier);
+						  "system identifier in backup manifest is %" PRIu64 ", but database system identifier is %" PRIu64,
+						  manifest_system_identifier,
+						  system_identifier);
 }
 
 /*
@@ -966,7 +962,7 @@ manifest_process_system_identifier(JsonManifestParseContext *context,
  */
 static void
 manifest_process_file(JsonManifestParseContext *context,
-					  const char *pathname, size_t size,
+					  const char *pathname, uint64 size,
 					  pg_checksum_type checksum_type,
 					  int checksum_length,
 					  uint8 *checksum_payload)

@@ -3,7 +3,7 @@
  * spi.c
  *				Server Programming Interface
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -70,7 +70,8 @@ static int	_SPI_execute_plan(SPIPlanPtr plan, const SPIExecuteOptions *options,
 static ParamListInfo _SPI_convert_params(int nargs, Oid *argtypes,
 										 Datum *Values, const char *Nulls);
 
-static int	_SPI_pquery(QueryDesc *queryDesc, bool fire_triggers, uint64 tcount);
+static int	_SPI_pquery(QueryDesc *queryDesc, bool fire_triggers, uint64 tcount,
+						CachedPlanSource *plansource, int query_index);
 
 static void _SPI_error_callback(void *arg);
 
@@ -334,13 +335,13 @@ _SPI_rollback(bool chain)
 	MemoryContext oldcontext = CurrentMemoryContext;
 	SavedTransactionCharacteristics savetc;
 
-	/* see under SPI_commit() */
+	/* see comments in _SPI_commit() */
 	if (_SPI_current->atomic)
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_TRANSACTION_TERMINATION),
 				 errmsg("invalid transaction termination")));
 
-	/* see under SPI_commit() */
+	/* see comments in _SPI_commit() */
 	if (IsSubTransaction())
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_TRANSACTION_TERMINATION),
@@ -582,8 +583,11 @@ SPI_inside_nonatomic_context(void)
 {
 	if (_SPI_current == NULL)
 		return false;			/* not in any SPI context at all */
+	/* these tests must match _SPI_commit's opinion of what's atomic: */
 	if (_SPI_current->atomic)
 		return false;			/* it's atomic (ie function not procedure) */
+	if (IsSubTransaction())
+		return false;			/* if within subtransaction, it's atomic */
 	return true;
 }
 
@@ -1682,7 +1686,8 @@ SPI_cursor_open_internal(const char *name, SPIPlanPtr plan,
 					  query_string,
 					  plansource->commandTag,
 					  stmt_list,
-					  cplan);
+					  cplan,
+					  plansource);
 
 	/*
 	 * Set up options for portal.  Default SCROLL type is chosen the same way
@@ -2411,9 +2416,12 @@ _SPI_execute_plan(SPIPlanPtr plan, const SPIExecuteOptions *options,
 
 	/*
 	 * We allow nonatomic behavior only if options->allow_nonatomic is set
-	 * *and* the SPI_OPT_NONATOMIC flag was given when connecting.
+	 * *and* the SPI_OPT_NONATOMIC flag was given when connecting and we are
+	 * not inside a subtransaction.  The latter two tests match whether
+	 * _SPI_commit() would allow a commit; see there for more commentary.
 	 */
-	allow_nonatomic = options->allow_nonatomic && !_SPI_current->atomic;
+	allow_nonatomic = options->allow_nonatomic &&
+		!_SPI_current->atomic && !IsSubTransaction();
 
 	/*
 	 * Setup error traceback support for ereport()
@@ -2494,6 +2502,7 @@ _SPI_execute_plan(SPIPlanPtr plan, const SPIExecuteOptions *options,
 		CachedPlanSource *plansource = (CachedPlanSource *) lfirst(lc1);
 		List	   *stmt_list;
 		ListCell   *lc2;
+		int			query_index = 0;
 
 		spicallbackarg.query = plansource->query_string;
 
@@ -2684,14 +2693,16 @@ _SPI_execute_plan(SPIPlanPtr plan, const SPIExecuteOptions *options,
 					snap = InvalidSnapshot;
 
 				qdesc = CreateQueryDesc(stmt,
+										cplan,
 										plansource->query_string,
 										snap, crosscheck_snapshot,
 										dest,
 										options->params,
 										_SPI_current->queryEnv,
 										0);
-				res = _SPI_pquery(qdesc, fire_triggers,
-								  canSetTag ? options->tcount : 0);
+
+				res = _SPI_pquery(qdesc, fire_triggers, canSetTag ? options->tcount : 0,
+								  plansource, query_index);
 				FreeQueryDesc(qdesc);
 			}
 			else
@@ -2788,6 +2799,8 @@ _SPI_execute_plan(SPIPlanPtr plan, const SPIExecuteOptions *options,
 				my_res = res;
 				goto fail;
 			}
+
+			query_index++;
 		}
 
 		/* Done with this plan, so release refcount */
@@ -2865,7 +2878,8 @@ _SPI_convert_params(int nargs, Oid *argtypes,
 }
 
 static int
-_SPI_pquery(QueryDesc *queryDesc, bool fire_triggers, uint64 tcount)
+_SPI_pquery(QueryDesc *queryDesc, bool fire_triggers, uint64 tcount,
+			CachedPlanSource *plansource, int query_index)
 {
 	int			operation = queryDesc->operation;
 	int			eflags;
@@ -2921,9 +2935,18 @@ _SPI_pquery(QueryDesc *queryDesc, bool fire_triggers, uint64 tcount)
 	else
 		eflags = EXEC_FLAG_SKIP_TRIGGERS;
 
-	ExecutorStart(queryDesc, eflags);
+	if (queryDesc->cplan)
+	{
+		ExecutorStartCachedPlan(queryDesc, eflags, plansource, query_index);
+		Assert(queryDesc->planstate);
+	}
+	else
+	{
+		if (!ExecutorStart(queryDesc, eflags))
+			elog(ERROR, "ExecutorStart() failed unexpectedly");
+	}
 
-	ExecutorRun(queryDesc, ForwardScanDirection, tcount, true);
+	ExecutorRun(queryDesc, ForwardScanDirection, tcount);
 
 	_SPI_current->processed = queryDesc->estate->es_processed;
 

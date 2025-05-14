@@ -3,7 +3,7 @@
  * subscriptioncmds.c
  *		subscription catalog manipulation functions
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -151,7 +151,7 @@ parse_subscription_options(ParseState *pstate, List *stmt_options,
 	if (IsSet(supported_opts, SUBOPT_BINARY))
 		opts->binary = false;
 	if (IsSet(supported_opts, SUBOPT_STREAMING))
-		opts->streaming = LOGICALREP_STREAM_OFF;
+		opts->streaming = LOGICALREP_STREAM_PARALLEL;
 	if (IsSet(supported_opts, SUBOPT_TWOPHASE_COMMIT))
 		opts->twophase = false;
 	if (IsSet(supported_opts, SUBOPT_DISABLE_ON_ERR))
@@ -440,37 +440,6 @@ parse_subscription_options(ParseState *pstate, List *stmt_options,
 }
 
 /*
- * Add publication names from the list to a string.
- */
-static void
-get_publications_str(List *publications, StringInfo dest, bool quote_literal)
-{
-	ListCell   *lc;
-	bool		first = true;
-
-	Assert(publications != NIL);
-
-	foreach(lc, publications)
-	{
-		char	   *pubname = strVal(lfirst(lc));
-
-		if (first)
-			first = false;
-		else
-			appendStringInfoString(dest, ", ");
-
-		if (quote_literal)
-			appendStringInfoString(dest, quote_literal_cstr(pubname));
-		else
-		{
-			appendStringInfoChar(dest, '"');
-			appendStringInfoString(dest, pubname);
-			appendStringInfoChar(dest, '"');
-		}
-	}
-}
-
-/*
  * Check that the specified publications are present on the publisher.
  */
 static void
@@ -486,7 +455,7 @@ check_publications(WalReceiverConn *wrconn, List *publications)
 	appendStringInfoString(cmd, "SELECT t.pubname FROM\n"
 						   " pg_catalog.pg_publication t WHERE\n"
 						   " t.pubname IN (");
-	get_publications_str(publications, cmd, true);
+	GetPublicationsStr(publications, cmd, true);
 	appendStringInfoChar(cmd, ')');
 
 	res = walrcv_exec(wrconn, cmd->data, 1, tableRow);
@@ -523,7 +492,7 @@ check_publications(WalReceiverConn *wrconn, List *publications)
 		/* Prepare the list of non-existent publication(s) for error message. */
 		StringInfo	pubnames = makeStringInfo();
 
-		get_publications_str(publicationsCopy, pubnames, false);
+		GetPublicationsStr(publicationsCopy, pubnames, false);
 		ereport(WARNING,
 				errcode(ERRCODE_UNDEFINED_OBJECT),
 				errmsg_plural("publication %s does not exist on the publisher",
@@ -2114,11 +2083,12 @@ AlterSubscriptionOwner_oid(Oid subid, Oid newOwnerId)
 }
 
 /*
- * Check and log a warning if the publisher has subscribed to the same table
- * from some other publisher. This check is required only if "copy_data = true"
- * and "origin = none" for CREATE SUBSCRIPTION and
- * ALTER SUBSCRIPTION ... REFRESH statements to notify the user that data
- * having origin might have been copied.
+ * Check and log a warning if the publisher has subscribed to the same table,
+ * its partition ancestors (if it's a partition), or its partition children (if
+ * it's a partitioned table), from some other publishers. This check is
+ * required only if "copy_data = true" and "origin = none" for CREATE
+ * SUBSCRIPTION and ALTER SUBSCRIPTION ... REFRESH statements to notify the
+ * user that data having origin might have been copied.
  *
  * This check need not be performed on the tables that are already added
  * because incremental sync for those tables will happen through WAL and the
@@ -2148,10 +2118,12 @@ check_publications_origin(WalReceiverConn *wrconn, List *publications,
 						   "SELECT DISTINCT P.pubname AS pubname\n"
 						   "FROM pg_publication P,\n"
 						   "     LATERAL pg_get_publication_tables(P.pubname) GPT\n"
-						   "     JOIN pg_subscription_rel PS ON (GPT.relid = PS.srrelid),\n"
+						   "     JOIN pg_subscription_rel PS ON (GPT.relid = PS.srrelid OR"
+						   "     GPT.relid IN (SELECT relid FROM pg_partition_ancestors(PS.srrelid) UNION"
+						   "                   SELECT relid FROM pg_partition_tree(PS.srrelid))),\n"
 						   "     pg_class C JOIN pg_namespace N ON (N.oid = C.relnamespace)\n"
 						   "WHERE C.oid = GPT.relid AND P.pubname IN (");
-	get_publications_str(publications, &cmd, true);
+	GetPublicationsStr(publications, &cmd, true);
 	appendStringInfoString(&cmd, ")\n");
 
 	/*
@@ -2208,7 +2180,7 @@ check_publications_origin(WalReceiverConn *wrconn, List *publications,
 		StringInfo	pubnames = makeStringInfo();
 
 		/* Prepare the list of publication(s) for warning message. */
-		get_publications_str(publist, pubnames, false);
+		GetPublicationsStr(publist, pubnames, false);
 		ereport(WARNING,
 				errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
 				errmsg("subscription \"%s\" requested copy_data with origin = NONE but might copy data that had a different origin",
@@ -2243,17 +2215,17 @@ fetch_table_list(WalReceiverConn *wrconn, List *publications)
 	List	   *tablelist = NIL;
 	int			server_version = walrcv_server_version(wrconn);
 	bool		check_columnlist = (server_version >= 150000);
+	StringInfo	pub_names = makeStringInfo();
 
 	initStringInfo(&cmd);
+
+	/* Build the pub_names comma-separated string. */
+	GetPublicationsStr(publications, pub_names, true);
 
 	/* Get the list of tables from the publisher. */
 	if (server_version >= 160000)
 	{
-		StringInfoData pub_names;
-
 		tableRow[2] = INT2VECTOROID;
-		initStringInfo(&pub_names);
-		get_publications_str(publications, &pub_names, true);
 
 		/*
 		 * From version 16, we allowed passing multiple publications to the
@@ -2275,9 +2247,7 @@ fetch_table_list(WalReceiverConn *wrconn, List *publications)
 						 "                FROM pg_publication\n"
 						 "                WHERE pubname IN ( %s )) AS gpt\n"
 						 "             ON gpt.relid = c.oid\n",
-						 pub_names.data);
-
-		pfree(pub_names.data);
+						 pub_names->data);
 	}
 	else
 	{
@@ -2288,11 +2258,12 @@ fetch_table_list(WalReceiverConn *wrconn, List *publications)
 		if (check_columnlist)
 			appendStringInfoString(&cmd, ", t.attnames\n");
 
-		appendStringInfoString(&cmd, "FROM pg_catalog.pg_publication_tables t\n"
-							   " WHERE t.pubname IN (");
-		get_publications_str(publications, &cmd, true);
-		appendStringInfoChar(&cmd, ')');
+		appendStringInfo(&cmd, "FROM pg_catalog.pg_publication_tables t\n"
+						 " WHERE t.pubname IN ( %s )",
+						 pub_names->data);
 	}
+
+	destroyStringInfo(pub_names);
 
 	res = walrcv_exec(wrconn, cmd.data, check_columnlist ? 3 : 2, tableRow);
 	pfree(cmd.data);

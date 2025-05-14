@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2024, PostgreSQL Global Development Group
+# Copyright (c) 2022-2025, PostgreSQL Global Development Group
 
 tests += {
   'name': 'recovery',
@@ -51,7 +51,9 @@ tests += {
       't/040_standby_failover_slots_sync.pl',
       't/041_checkpoint_at_promote.pl',
       't/042_low_level_backup.pl',
-      't/043_wal_replay_wait.pl',
+      't/043_no_contrecord_switch.pl',
+      't/044_invalidate_inactive_slots.pl',
+      't/045_archive_restartpoint.pl',
     ],
   },
 }

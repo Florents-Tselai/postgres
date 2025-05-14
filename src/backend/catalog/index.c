@@ -3,7 +3,7 @@
  * index.c
  *	  code to create and destroy POSTGRES index relations
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -63,6 +63,7 @@
 #include "optimizer/optimizer.h"
 #include "parser/parser.h"
 #include "pgstat.h"
+#include "postmaster/autovacuum.h"
 #include "rewrite/rewriteManip.h"
 #include "storage/bufmgr.h"
 #include "storage/lmgr.h"
@@ -320,7 +321,6 @@ ConstructTupleDescriptor(Relation heapRelation,
 
 		MemSet(to, 0, ATTRIBUTE_FIXED_PART_SIZE);
 		to->attnum = i + 1;
-		to->attcacheoff = -1;
 		to->attislocal = true;
 		to->attcollation = (i < numkeyatts) ? collationIds[i] : InvalidOid;
 
@@ -477,6 +477,8 @@ ConstructTupleDescriptor(Relation heapRelation,
 
 			ReleaseSysCache(tuple);
 		}
+
+		populate_compact_attribute(indexTupDesc, i);
 	}
 
 	pfree(amroutine);
@@ -1900,7 +1902,7 @@ index_constraint_create(Relation heapRelation,
 	bool		islocal;
 	bool		noinherit;
 	bool		is_without_overlaps;
-	int			inhcount;
+	int16		inhcount;
 
 	deferrable = (constr_flags & INDEX_CONSTR_CREATE_DEFERRABLE) != 0;
 	initdeferred = (constr_flags & INDEX_CONSTR_CREATE_INIT_DEFERRED) != 0;
@@ -1957,6 +1959,7 @@ index_constraint_create(Relation heapRelation,
 								   constraintType,
 								   deferrable,
 								   initdeferred,
+								   true,	/* Is Enforced */
 								   true,
 								   parentConstraintId,
 								   RelationGetRelid(heapRelation),
@@ -2276,8 +2279,16 @@ index_drop(Oid indexId, bool concurrent, bool concurrent_lock_mode)
 		 */
 		WaitForLockers(heaplocktag, AccessExclusiveLock, true);
 
+		/*
+		 * Updating pg_index might involve TOAST table access, so ensure we
+		 * have a valid snapshot.
+		 */
+		PushActiveSnapshot(GetTransactionSnapshot());
+
 		/* Finish invalidation of index and mark it as dead */
 		index_concurrently_set_dead(heapId, indexId);
+
+		PopActiveSnapshot();
 
 		/*
 		 * Again, commit the transaction to make the pg_index update visible
@@ -2327,6 +2338,12 @@ index_drop(Oid indexId, bool concurrent, bool concurrent_lock_mode)
 	RelationForgetRelation(indexId);
 
 	/*
+	 * Updating pg_index might involve TOAST table access, so ensure we have a
+	 * valid snapshot.
+	 */
+	PushActiveSnapshot(GetTransactionSnapshot());
+
+	/*
 	 * fix INDEX relation, and check for expressional index
 	 */
 	indexRelation = table_open(IndexRelationId, RowExclusiveLock);
@@ -2342,6 +2359,8 @@ index_drop(Oid indexId, bool concurrent, bool concurrent_lock_mode)
 
 	ReleaseSysCache(tuple);
 	table_close(indexRelation, RowExclusiveLock);
+
+	PopActiveSnapshot();
 
 	/*
 	 * if it has any expression columns, we might have stored statistics about
@@ -2659,9 +2678,6 @@ BuildSpeculativeIndexInfo(Relation index, IndexInfo *ii)
 	 */
 	Assert(ii->ii_Unique);
 
-	if (index->rd_rel->relam != BTREE_AM_OID)
-		elog(ERROR, "unexpected non-btree speculative unique index");
-
 	ii->ii_UniqueOps = (Oid *) palloc(sizeof(Oid) * indnkeyatts);
 	ii->ii_UniqueProcs = (Oid *) palloc(sizeof(Oid) * indnkeyatts);
 	ii->ii_UniqueStrats = (uint16 *) palloc(sizeof(uint16) * indnkeyatts);
@@ -2673,7 +2689,11 @@ BuildSpeculativeIndexInfo(Relation index, IndexInfo *ii)
 	/* We need the func OIDs and strategy numbers too */
 	for (i = 0; i < indnkeyatts; i++)
 	{
-		ii->ii_UniqueStrats[i] = BTEqualStrategyNumber;
+		ii->ii_UniqueStrats[i] =
+			IndexAmTranslateCompareType(COMPARE_EQ,
+										index->rd_rel->relam,
+										index->rd_opfamily[i],
+										false);
 		ii->ii_UniqueOps[i] =
 			get_opfamily_member(index->rd_opfamily[i],
 								index->rd_opcintype[i],
@@ -2774,8 +2794,8 @@ FormIndexDatum(IndexInfo *indexInfo,
  * hasindex: set relhasindex to this value
  * reltuples: if >= 0, set reltuples to this value; else no change
  *
- * If reltuples >= 0, relpages and relallvisible are also updated (using
- * RelationGetNumberOfBlocks() and visibilitymap_count()).
+ * If reltuples >= 0, relpages, relallvisible, and relallfrozen are also
+ * updated (using RelationGetNumberOfBlocks() and visibilitymap_count()).
  *
  * NOTE: an important side-effect of this operation is that an SI invalidation
  * message is sent out to all backends --- including me --- causing relcache
@@ -2790,6 +2810,10 @@ index_update_stats(Relation rel,
 				   bool hasindex,
 				   double reltuples)
 {
+	bool		update_stats;
+	BlockNumber relpages = 0;	/* keep compiler quiet */
+	BlockNumber relallvisible = 0;
+	BlockNumber relallfrozen = 0;
 	Oid			relid = RelationGetRelid(rel);
 	Relation	pg_class;
 	ScanKeyData key[1];
@@ -2797,6 +2821,61 @@ index_update_stats(Relation rel,
 	void	   *state;
 	Form_pg_class rd_rel;
 	bool		dirty;
+
+	/*
+	 * As a special hack, if we are dealing with an empty table and the
+	 * existing reltuples is -1, we leave that alone.  This ensures that
+	 * creating an index as part of CREATE TABLE doesn't cause the table to
+	 * prematurely look like it's been vacuumed.  The rd_rel we modify may
+	 * differ from rel->rd_rel due to e.g. commit of concurrent GRANT, but the
+	 * commands that change reltuples take locks conflicting with ours.  (Even
+	 * if a command changed reltuples under a weaker lock, this affects only
+	 * statistics for an empty table.)
+	 */
+	if (reltuples == 0 && rel->rd_rel->reltuples < 0)
+		reltuples = -1;
+
+	/*
+	 * Don't update statistics during binary upgrade, because the indexes are
+	 * created before the data is moved into place.
+	 */
+	update_stats = reltuples >= 0 && !IsBinaryUpgrade;
+
+	/*
+	 * If autovacuum is off, user may not be expecting table relstats to
+	 * change.  This can be important when restoring a dump that includes
+	 * statistics, as the table statistics may be restored before the index is
+	 * created, and we want to preserve the restored table statistics.
+	 */
+	if (rel->rd_rel->relkind == RELKIND_RELATION ||
+		rel->rd_rel->relkind == RELKIND_TOASTVALUE ||
+		rel->rd_rel->relkind == RELKIND_MATVIEW)
+	{
+		if (AutoVacuumingActive())
+		{
+			StdRdOptions *options = (StdRdOptions *) rel->rd_options;
+
+			if (options != NULL && !options->autovacuum.enabled)
+				update_stats = false;
+		}
+		else
+			update_stats = false;
+	}
+
+	/*
+	 * Finish I/O and visibility map buffer locks before
+	 * systable_inplace_update_begin() locks the pg_class buffer.  The rd_rel
+	 * we modify may differ from rel->rd_rel due to e.g. commit of concurrent
+	 * GRANT, but no command changes a relkind from non-index to index.  (Even
+	 * if one did, relallvisible doesn't break functionality.)
+	 */
+	if (update_stats)
+	{
+		relpages = RelationGetNumberOfBlocks(rel);
+
+		if (rel->rd_rel->relkind != RELKIND_INDEX)
+			visibilitymap_count(rel, &relallvisible, &relallfrozen);
+	}
 
 	/*
 	 * We always update the pg_class row using a non-transactional,
@@ -2842,15 +2921,6 @@ index_update_stats(Relation rel,
 	/* Should this be a more comprehensive test? */
 	Assert(rd_rel->relkind != RELKIND_PARTITIONED_INDEX);
 
-	/*
-	 * As a special hack, if we are dealing with an empty table and the
-	 * existing reltuples is -1, we leave that alone.  This ensures that
-	 * creating an index as part of CREATE TABLE doesn't cause the table to
-	 * prematurely look like it's been vacuumed.
-	 */
-	if (reltuples == 0 && rd_rel->reltuples < 0)
-		reltuples = -1;
-
 	/* Apply required updates, if any, to copied tuple */
 
 	dirty = false;
@@ -2860,20 +2930,8 @@ index_update_stats(Relation rel,
 		dirty = true;
 	}
 
-	/*
-	 * Avoid updating statistics during binary upgrade, because the indexes
-	 * are created before the data is moved into place.
-	 */
-	if (reltuples >= 0 && !IsBinaryUpgrade)
+	if (update_stats)
 	{
-		BlockNumber relpages = RelationGetNumberOfBlocks(rel);
-		BlockNumber relallvisible;
-
-		if (rd_rel->relkind != RELKIND_INDEX)
-			visibilitymap_count(rel, &relallvisible, NULL);
-		else					/* don't bother for indexes */
-			relallvisible = 0;
-
 		if (rd_rel->relpages != (int32) relpages)
 		{
 			rd_rel->relpages = (int32) relpages;
@@ -2889,6 +2947,11 @@ index_update_stats(Relation rel,
 			rd_rel->relallvisible = (int32) relallvisible;
 			dirty = true;
 		}
+		if (rd_rel->relallfrozen != (int32) relallfrozen)
+		{
+			rd_rel->relallfrozen = (int32) relallfrozen;
+			dirty = true;
+		}
 	}
 
 	/*
@@ -2897,12 +2960,19 @@ index_update_stats(Relation rel,
 	if (dirty)
 	{
 		systable_inplace_update_finish(state, tuple);
-		/* the above sends a cache inval message */
+		/* the above sends transactional and immediate cache inval messages */
 	}
 	else
 	{
 		systable_inplace_update_cancel(state);
-		/* no need to change tuple, but force relcache inval anyway */
+
+		/*
+		 * While we didn't change relhasindex, CREATE INDEX needs a
+		 * transactional inval for when the new index's catalog rows become
+		 * visible.  Other CREATE INDEX and REINDEX code happens to also queue
+		 * this inval, but keep this in case rare callers rely on this part of
+		 * our API contract.
+		 */
 		CacheInvalidateRelcacheByTuple(tuple);
 	}
 
@@ -2950,7 +3020,7 @@ index_build(Relation heapRelation,
 
 	/*
 	 * Determine worker process details for parallel CREATE INDEX.  Currently,
-	 * only btree has support for parallel builds.
+	 * only btree and BRIN have support for parallel builds.
 	 *
 	 * Note that planner considers parallel safety for us.
 	 */
@@ -3356,7 +3426,7 @@ validate_index(Oid heapId, Oid indexId, Snapshot snapshot)
 
 	/* ambulkdelete updates progress metrics */
 	(void) index_bulk_delete(&ivinfo, NULL,
-							 validate_index_callback, (void *) &state);
+							 validate_index_callback, &state);
 
 	/* Execute the sort */
 	{
@@ -3989,6 +4059,14 @@ reindex_relation(const ReindexStmt *stmt, Oid relid, int flags,
 					 errmsg("cannot reindex invalid index \"%s.%s\" on TOAST table, skipping",
 							get_namespace_name(indexNamespaceId),
 							get_rel_name(indexOid))));
+
+			/*
+			 * Remove this invalid toast index from the reindex pending list,
+			 * as it is skipped here due to the hard failure that would happen
+			 * in reindex_index(), should we try to process it.
+			 */
+			if (flags & REINDEX_REL_SUPPRESS_INDEX_USE)
+				RemoveReindexPending(indexOid);
 			continue;
 		}
 

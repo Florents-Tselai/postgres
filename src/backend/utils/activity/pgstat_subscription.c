@@ -8,7 +8,7 @@
  * storage implementation and the details about individual types of
  * statistics.
  *
- * Copyright (c) 2001-2024, PostgreSQL Global Development Group
+ * Copyright (c) 2001-2025, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  src/backend/utils/activity/pgstat_subscription.c
@@ -96,8 +96,8 @@ pgstat_fetch_stat_subscription(Oid subid)
 /*
  * Flush out pending stats for the entry
  *
- * If nowait is true, this function returns false if lock could not
- * immediately acquired, otherwise true is returned.
+ * If nowait is true and the lock could not be immediately acquired, returns
+ * false without flushing the entry.  Otherwise returns true.
  */
 bool
 pgstat_subscription_flush_cb(PgStat_EntryRef *entry_ref, bool nowait)

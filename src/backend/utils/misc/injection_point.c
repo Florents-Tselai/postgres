@@ -6,7 +6,7 @@
  * Injection points can be used to run arbitrary code by attaching callbacks
  * that would be executed in place of the named injection point.
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -17,6 +17,10 @@
  */
 #include "postgres.h"
 
+#include "utils/injection_point.h"
+
+#ifdef USE_INJECTION_POINTS
+
 #include <sys/stat.h>
 
 #include "fmgr.h"
@@ -25,10 +29,7 @@
 #include "storage/lwlock.h"
 #include "storage/shmem.h"
 #include "utils/hsearch.h"
-#include "utils/injection_point.h"
 #include "utils/memutils.h"
-
-#ifdef USE_INJECTION_POINTS
 
 /* Field sizes */
 #define INJ_NAME_MAXLEN		64
@@ -59,7 +60,7 @@ typedef struct InjectionPointEntry
 	 */
 	pg_atomic_uint64 generation;
 
-	char		name[INJ_NAME_MAXLEN];	/* hash key */
+	char		name[INJ_NAME_MAXLEN];	/* point name */
 	char		library[INJ_LIB_MAXLEN];	/* library */
 	char		function[INJ_FUNC_MAXLEN];	/* function */
 
@@ -540,14 +541,14 @@ InjectionPointLoad(const char *name)
  * Execute an injection point, if defined.
  */
 void
-InjectionPointRun(const char *name)
+InjectionPointRun(const char *name, void *arg)
 {
 #ifdef USE_INJECTION_POINTS
 	InjectionPointCacheEntry *cache_entry;
 
 	cache_entry = InjectionPointCacheRefresh(name);
 	if (cache_entry)
-		cache_entry->callback(name, cache_entry->private_data);
+		cache_entry->callback(name, cache_entry->private_data, arg);
 #else
 	elog(ERROR, "Injection points are not supported by this build");
 #endif
@@ -557,14 +558,14 @@ InjectionPointRun(const char *name)
  * Execute an injection point directly from the cache, if defined.
  */
 void
-InjectionPointCached(const char *name)
+InjectionPointCached(const char *name, void *arg)
 {
 #ifdef USE_INJECTION_POINTS
 	InjectionPointCacheEntry *cache_entry;
 
 	cache_entry = injection_point_cache_get(name);
 	if (cache_entry)
-		cache_entry->callback(name, cache_entry->private_data);
+		cache_entry->callback(name, cache_entry->private_data, arg);
 #else
 	elog(ERROR, "Injection points are not supported by this build");
 #endif

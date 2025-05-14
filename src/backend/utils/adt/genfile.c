@@ -4,7 +4,7 @@
  *		Functions for direct access to files
  *
  *
- * Copyright (c) 2004-2024, PostgreSQL Global Development Group
+ * Copyright (c) 2004-2025, PostgreSQL Global Development Group
  *
  * Author: Andreas Pflug <pgadmin@pse-consulting.de>
  *
@@ -687,6 +687,15 @@ Datum
 pg_ls_archive_statusdir(PG_FUNCTION_ARGS)
 {
 	return pg_ls_dir_files(fcinfo, XLOGDIR "/archive_status", true);
+}
+
+/*
+ * Function to return the list of files in the WAL summaries directory.
+ */
+Datum
+pg_ls_summariesdir(PG_FUNCTION_ARGS)
+{
+	return pg_ls_dir_files(fcinfo, XLOGDIR "/summaries", true);
 }
 
 /*

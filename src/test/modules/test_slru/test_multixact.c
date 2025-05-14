@@ -3,7 +3,7 @@
  * test_multixact.c
  *		Support code for multixact testing
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * IDENTIFICATION
@@ -16,7 +16,7 @@
 
 #include "access/multixact.h"
 #include "access/xact.h"
-#include "utils/builtins.h"
+#include "fmgr.h"
 #include "utils/injection_point.h"
 
 PG_FUNCTION_INFO_V1(test_create_multixact);
@@ -46,7 +46,7 @@ test_read_multixact(PG_FUNCTION_ARGS)
 	MultiXactId id = PG_GETARG_TRANSACTIONID(0);
 	MultiXactMember *members;
 
-	INJECTION_POINT("test-multixact-read");
+	INJECTION_POINT("test-multixact-read", NULL);
 	/* discard caches */
 	AtEOXact_MultiXact();
 

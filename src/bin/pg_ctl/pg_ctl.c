@@ -2,7 +2,7 @@
  *
  * pg_ctl --- start/stops/restarts the PostgreSQL server
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  *
  * src/bin/pg_ctl/pg_ctl.c
  *
@@ -618,7 +618,7 @@ wait_for_postmaster_start(pid_t pm_pid, bool do_checkpoint)
 			 * Allow 2 seconds slop for possible cross-process clock skew.
 			 */
 			pmpid = atol(optlines[LOCK_FILE_LINE_PID - 1]);
-			pmstart = atol(optlines[LOCK_FILE_LINE_START_TIME - 1]);
+			pmstart = atoll(optlines[LOCK_FILE_LINE_START_TIME - 1]);
 			if (pmstart >= start_time - 2 &&
 #ifndef WIN32
 				pmpid == pm_pid

@@ -7,7 +7,7 @@
  *	  of the API of the memory management subsystem.
  *
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/utils/memutils.h
@@ -18,6 +18,9 @@
 #define MEMUTILS_H
 
 #include "nodes/memnodes.h"
+#include "storage/condition_variable.h"
+#include "storage/lmgr.h"
+#include "utils/dsa.h"
 
 
 /*
@@ -48,6 +51,23 @@
 
 #define AllocHugeSizeIsValid(size)	((Size) (size) <= MaxAllocHugeSize)
 
+/*
+ * Memory Context reporting size limits.
+ */
+
+/* Max length of context name and ident */
+#define MEMORY_CONTEXT_IDENT_SHMEM_SIZE 64
+/* Maximum size (in bytes) of DSA area per process */
+#define MEMORY_CONTEXT_REPORT_MAX_PER_BACKEND  ((size_t) (1 * 1024 * 1024))
+
+/*
+ * Maximum size per context. Actual size may be lower as this assumes the worst
+ * case of deepest path and longest identifiers (name and ident, thus the
+ * multiplication by 2). The path depth is limited to 100 like for memory
+ * context logging.
+ */
+#define MAX_MEMORY_CONTEXT_STATS_SIZE (sizeof(MemoryStatsEntry) + \
+	(100 * sizeof(int)) + (2 * MEMORY_CONTEXT_IDENT_SHMEM_SIZE))
 
 /*
  * Standard top-level memory contexts.
@@ -189,4 +209,196 @@ extern MemoryContext BumpContextCreate(MemoryContext parent,
 #define SLAB_DEFAULT_BLOCK_SIZE		(8 * 1024)
 #define SLAB_LARGE_BLOCK_SIZE		(8 * 1024 * 1024)
 
+/*
+ * pg_memory_is_all_zeros
+ *
+ * Test if a memory region starting at "ptr" and of size "len" is full of
+ * zeroes.
+ *
+ * The test is divided into multiple cases for safety reason and multiple
+ * phases for efficiency.
+ *
+ * Case 1: len < sizeof(size_t) bytes, then byte-by-byte comparison.
+ * Case 2: len < (sizeof(size_t) * 8 - 1) bytes:
+ *       - Phase 1: byte-by-byte comparison, until the pointer is aligned.
+ *       - Phase 2: size_t comparisons, with aligned pointers, up to the last
+ *                  location possible.
+ *       - Phase 3: byte-by-byte comparison, until the end location.
+ * Case 3: len >= (sizeof(size_t) * 8) bytes, same as case 2 except that an
+ *         additional phase is placed between Phase 1 and Phase 2, with
+ *         (8 * sizeof(size_t)) comparisons using bitwise OR to encourage
+ *         compilers to use SIMD instructions if available, up to the last
+ *         aligned location possible.
+ *
+ * Case 1 and Case 2 are mandatory to ensure that we won't read beyond the
+ * memory area.  This is portable for 32-bit and 64-bit architectures.
+ *
+ * Caller must ensure that "ptr" is not NULL.
+ */
+static inline bool
+pg_memory_is_all_zeros(const void *ptr, size_t len)
+{
+	const unsigned char *p = (const unsigned char *) ptr;
+	const unsigned char *end = &p[len];
+	const unsigned char *aligned_end = (const unsigned char *)
+		((uintptr_t) end & (~(sizeof(size_t) - 1)));
+
+	if (len < sizeof(size_t))
+	{
+		while (p < end)
+		{
+			if (*p++ != 0)
+				return false;
+		}
+		return true;
+	}
+
+	/* "len" in the [sizeof(size_t), sizeof(size_t) * 8 - 1] range */
+	if (len < sizeof(size_t) * 8)
+	{
+		/* Compare bytes until the pointer "p" is aligned */
+		while (((uintptr_t) p & (sizeof(size_t) - 1)) != 0)
+		{
+			if (p == end)
+				return true;
+			if (*p++ != 0)
+				return false;
+		}
+
+		/*
+		 * Compare remaining size_t-aligned chunks.
+		 *
+		 * There is no risk to read beyond the memory area, as "aligned_end"
+		 * cannot be higher than "end".
+		 */
+		for (; p < aligned_end; p += sizeof(size_t))
+		{
+			if (*(size_t *) p != 0)
+				return false;
+		}
+
+		/* Compare remaining bytes until the end */
+		while (p < end)
+		{
+			if (*p++ != 0)
+				return false;
+		}
+		return true;
+	}
+
+	/* "len" in the [sizeof(size_t) * 8, inf) range */
+
+	/* Compare bytes until the pointer "p" is aligned */
+	while (((uintptr_t) p & (sizeof(size_t) - 1)) != 0)
+	{
+		if (p == end)
+			return true;
+
+		if (*p++ != 0)
+			return false;
+	}
+
+	/*
+	 * Compare 8 * sizeof(size_t) chunks at once.
+	 *
+	 * For performance reasons, we manually unroll this loop and purposefully
+	 * use bitwise-ORs to combine each comparison.  This prevents boolean
+	 * short-circuiting and lets the compiler know that it's safe to access
+	 * all 8 elements regardless of the result of the other comparisons.  This
+	 * seems to be enough to coax a few compilers into using SIMD
+	 * instructions.
+	 */
+	for (; p < aligned_end - (sizeof(size_t) * 7); p += sizeof(size_t) * 8)
+	{
+		if ((((size_t *) p)[0] != 0) | (((size_t *) p)[1] != 0) |
+			(((size_t *) p)[2] != 0) | (((size_t *) p)[3] != 0) |
+			(((size_t *) p)[4] != 0) | (((size_t *) p)[5] != 0) |
+			(((size_t *) p)[6] != 0) | (((size_t *) p)[7] != 0))
+			return false;
+	}
+
+	/*
+	 * Compare remaining size_t-aligned chunks.
+	 *
+	 * There is no risk to read beyond the memory area, as "aligned_end"
+	 * cannot be higher than "end".
+	 */
+	for (; p < aligned_end; p += sizeof(size_t))
+	{
+		if (*(size_t *) p != 0)
+			return false;
+	}
+
+	/* Compare remaining bytes until the end */
+	while (p < end)
+	{
+		if (*p++ != 0)
+			return false;
+	}
+
+	return true;
+}
+
+/* Dynamic shared memory state for statistics per context */
+typedef struct MemoryStatsEntry
+{
+	dsa_pointer name;
+	dsa_pointer ident;
+	dsa_pointer path;
+	NodeTag		type;
+	int			path_length;
+	int			levels;
+	int64		totalspace;
+	int64		nblocks;
+	int64		freespace;
+	int64		freechunks;
+	int			num_agg_stats;
+} MemoryStatsEntry;
+
+/*
+ * Static shared memory state representing the DSA area created for memory
+ * context statistics reporting.  A single DSA area is created and used by all
+ * the processes, each having its specific DSA allocations for sharing memory
+ * statistics, tracked by per backend static shared memory state.
+ */
+typedef struct MemoryStatsCtl
+{
+	dsa_handle	memstats_dsa_handle;
+	LWLock		lw_lock;
+} MemoryStatsCtl;
+
+/*
+ * Per backend static shared memory state for memory context statistics
+ * reporting.
+ */
+typedef struct MemoryStatsBackendState
+{
+	ConditionVariable memcxt_cv;
+	LWLock		lw_lock;
+	int			proc_id;
+	int			total_stats;
+	bool		summary;
+	dsa_pointer memstats_dsa_pointer;
+	TimestampTz stats_timestamp;
+} MemoryStatsBackendState;
+
+
+/*
+ * Used for storage of transient identifiers for pg_get_backend_memory_contexts
+ */
+typedef struct MemoryStatsContextId
+{
+	MemoryContext context;
+	int			context_id;
+} MemoryStatsContextId;
+
+extern PGDLLIMPORT MemoryStatsBackendState *memCxtState;
+extern PGDLLIMPORT MemoryStatsCtl *memCxtArea;
+extern PGDLLIMPORT dsa_area *MemoryStatsDsaArea;
+extern void ProcessGetMemoryContextInterrupt(void);
+extern const char *ContextTypeToString(NodeTag type);
+extern void HandleGetMemoryContextInterrupt(void);
+extern Size MemoryContextReportingShmemSize(void);
+extern void MemoryContextReportingShmemInit(void);
+extern void AtProcExit_memstats_cleanup(int code, Datum arg);
 #endif							/* MEMUTILS_H */

@@ -4,7 +4,7 @@
  *		Functions for handling locale-related info
  *
  *
- * Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Copyright (c) 1996-2025, PostgreSQL Global Development Group
  *
  *
  * IDENTIFICATION
@@ -21,10 +21,6 @@
 
 #ifndef WIN32
 #include <langinfo.h>
-#endif
-
-#ifdef LOCALE_T_IN_XLOCALE
-#include <xlocale.h>
 #endif
 
 #include "mb/pg_wchar.h"

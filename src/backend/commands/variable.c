@@ -4,7 +4,7 @@
  *		Routines for handling specialized SET variables.
  *
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -182,7 +182,7 @@ check_datestyle(char **newval, void **extra, GucSource source)
 
 	if (!ok)
 	{
-		GUC_check_errdetail("Conflicting \"datestyle\" specifications.");
+		GUC_check_errdetail("Conflicting \"DateStyle\" specifications.");
 		return false;
 	}
 
@@ -232,7 +232,7 @@ check_datestyle(char **newval, void **extra, GucSource source)
 		return false;
 	myextra[0] = newDateStyle;
 	myextra[1] = newDateOrder;
-	*extra = (void *) myextra;
+	*extra = myextra;
 
 	return true;
 }
@@ -381,6 +381,8 @@ void
 assign_timezone(const char *newval, void *extra)
 {
 	session_timezone = *((pg_tz **) extra);
+	/* datetime.c's cache of timezone abbrevs may now be obsolete */
+	ClearTimeZoneAbbrevCache();
 }
 
 /*
@@ -479,7 +481,7 @@ show_log_timezone(void)
  */
 
 /*
- * GUC check_hook for assign_timezone_abbreviations
+ * GUC check_hook for timezone_abbreviations
  */
 bool
 check_timezone_abbreviations(char **newval, void **extra, GucSource source)
@@ -511,7 +513,7 @@ check_timezone_abbreviations(char **newval, void **extra, GucSource source)
 }
 
 /*
- * GUC assign_hook for assign_timezone_abbreviations
+ * GUC assign_hook for timezone_abbreviations
  */
 void
 assign_timezone_abbreviations(const char *newval, void *extra)
@@ -822,63 +824,77 @@ check_session_authorization(char **newval, void **extra, GucSource source)
 	if (*newval == NULL)
 		return true;
 
-	if (!IsTransactionState())
+	if (InitializingParallelWorker)
 	{
 		/*
-		 * Can't do catalog lookups, so fail.  The result of this is that
-		 * session_authorization cannot be set in postgresql.conf, which seems
-		 * like a good thing anyway, so we don't work hard to avoid it.
+		 * In parallel worker initialization, we want to copy the leader's
+		 * state even if it no longer matches the catalogs. ParallelWorkerMain
+		 * already installed the correct role OID and superuser state.
 		 */
-		return false;
+		roleid = GetSessionUserId();
+		is_superuser = GetSessionUserIsSuperuser();
 	}
-
-	/*
-	 * When source == PGC_S_TEST, we don't throw a hard error for a
-	 * nonexistent user name or insufficient privileges, only a NOTICE. See
-	 * comments in guc.h.
-	 */
-
-	/* Look up the username */
-	roleTup = SearchSysCache1(AUTHNAME, PointerGetDatum(*newval));
-	if (!HeapTupleIsValid(roleTup))
+	else
 	{
-		if (source == PGC_S_TEST)
+		if (!IsTransactionState())
 		{
-			ereport(NOTICE,
-					(errcode(ERRCODE_UNDEFINED_OBJECT),
-					 errmsg("role \"%s\" does not exist", *newval)));
-			return true;
+			/*
+			 * Can't do catalog lookups, so fail.  The result of this is that
+			 * session_authorization cannot be set in postgresql.conf, which
+			 * seems like a good thing anyway, so we don't work hard to avoid
+			 * it.
+			 */
+			return false;
 		}
-		GUC_check_errmsg("role \"%s\" does not exist", *newval);
-		return false;
-	}
 
-	roleform = (Form_pg_authid) GETSTRUCT(roleTup);
-	roleid = roleform->oid;
-	is_superuser = roleform->rolsuper;
+		/*
+		 * When source == PGC_S_TEST, we don't throw a hard error for a
+		 * nonexistent user name or insufficient privileges, only a NOTICE.
+		 * See comments in guc.h.
+		 */
 
-	ReleaseSysCache(roleTup);
-
-	/*
-	 * Only superusers may SET SESSION AUTHORIZATION a role other than itself.
-	 * Note that in case of multiple SETs in a single session, the original
-	 * authenticated user's superuserness is what matters.
-	 */
-	if (roleid != GetAuthenticatedUserId() &&
-		!superuser_arg(GetAuthenticatedUserId()))
-	{
-		if (source == PGC_S_TEST)
+		/* Look up the username */
+		roleTup = SearchSysCache1(AUTHNAME, PointerGetDatum(*newval));
+		if (!HeapTupleIsValid(roleTup))
 		{
-			ereport(NOTICE,
-					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-					 errmsg("permission will be denied to set session authorization \"%s\"",
-							*newval)));
-			return true;
+			if (source == PGC_S_TEST)
+			{
+				ereport(NOTICE,
+						(errcode(ERRCODE_UNDEFINED_OBJECT),
+						 errmsg("role \"%s\" does not exist", *newval)));
+				return true;
+			}
+			GUC_check_errmsg("role \"%s\" does not exist", *newval);
+			return false;
 		}
-		GUC_check_errcode(ERRCODE_INSUFFICIENT_PRIVILEGE);
-		GUC_check_errmsg("permission denied to set session authorization \"%s\"",
-						 *newval);
-		return false;
+
+		roleform = (Form_pg_authid) GETSTRUCT(roleTup);
+		roleid = roleform->oid;
+		is_superuser = roleform->rolsuper;
+
+		ReleaseSysCache(roleTup);
+
+		/*
+		 * Only superusers may SET SESSION AUTHORIZATION a role other than
+		 * itself. Note that in case of multiple SETs in a single session, the
+		 * original authenticated user's superuserness is what matters.
+		 */
+		if (roleid != GetAuthenticatedUserId() &&
+			!superuser_arg(GetAuthenticatedUserId()))
+		{
+			if (source == PGC_S_TEST)
+			{
+				ereport(NOTICE,
+						(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+						 errmsg("permission will be denied to set session authorization \"%s\"",
+								*newval)));
+				return true;
+			}
+			GUC_check_errcode(ERRCODE_INSUFFICIENT_PRIVILEGE);
+			GUC_check_errmsg("permission denied to set session authorization \"%s\"",
+							 *newval);
+			return false;
+		}
 	}
 
 	/* Set up "extra" struct for assign_session_authorization to use */
@@ -887,7 +903,7 @@ check_session_authorization(char **newval, void **extra, GucSource source)
 		return false;
 	myextra->roleid = roleid;
 	myextra->is_superuser = is_superuser;
-	*extra = (void *) myextra;
+	*extra = myextra;
 
 	return true;
 }
@@ -928,6 +944,16 @@ check_role(char **newval, void **extra, GucSource source)
 		roleid = InvalidOid;
 		is_superuser = false;
 	}
+	else if (InitializingParallelWorker)
+	{
+		/*
+		 * In parallel worker initialization, we want to copy the leader's
+		 * state even if it no longer matches the catalogs. ParallelWorkerMain
+		 * already installed the correct role OID and superuser state.
+		 */
+		roleid = GetCurrentRoleId();
+		is_superuser = current_role_is_superuser;
+	}
 	else
 	{
 		if (!IsTransactionState())
@@ -967,13 +993,8 @@ check_role(char **newval, void **extra, GucSource source)
 
 		ReleaseSysCache(roleTup);
 
-		/*
-		 * Verify that session user is allowed to become this role, but skip
-		 * this in parallel mode, where we must blindly recreate the parallel
-		 * leader's state.
-		 */
-		if (!InitializingParallelWorker &&
-			!member_can_set_role(GetSessionUserId(), roleid))
+		/* Verify that session user is allowed to become this role */
+		if (!member_can_set_role(GetSessionUserId(), roleid))
 		{
 			if (source == PGC_S_TEST)
 			{
@@ -996,7 +1017,7 @@ check_role(char **newval, void **extra, GucSource source)
 		return false;
 	myextra->roleid = roleid;
 	myextra->is_superuser = is_superuser;
-	*extra = (void *) myextra;
+	*extra = myextra;
 
 	return true;
 }
@@ -1066,12 +1087,14 @@ check_application_name(char **newval, void **extra, GucSource source)
 	if (!clean)
 		return false;
 
-	ret = guc_strdup(WARNING, clean);
+	ret = guc_strdup(LOG, clean);
 	if (!ret)
 	{
 		pfree(clean);
 		return false;
 	}
+
+	guc_free(*newval);
 
 	pfree(clean);
 	*newval = ret;
@@ -1102,12 +1125,14 @@ check_cluster_name(char **newval, void **extra, GucSource source)
 	if (!clean)
 		return false;
 
-	ret = guc_strdup(WARNING, clean);
+	ret = guc_strdup(LOG, clean);
 	if (!ret)
 	{
 		pfree(clean);
 		return false;
 	}
+
+	guc_free(*newval);
 
 	pfree(clean);
 	*newval = ret;
@@ -1120,7 +1145,6 @@ check_cluster_name(char **newval, void **extra, GucSource source)
 void
 assign_maintenance_io_concurrency(int newval, void *extra)
 {
-#ifdef USE_PREFETCH
 	/*
 	 * Reconfigure recovery prefetching, because a setting it depends on
 	 * changed.
@@ -1128,9 +1152,24 @@ assign_maintenance_io_concurrency(int newval, void *extra)
 	maintenance_io_concurrency = newval;
 	if (AmStartupProcess())
 		XLogPrefetchReconfigure();
-#endif
 }
 
+/*
+ * GUC assign hooks that recompute io_combine_limit whenever
+ * io_combine_limit_guc and io_max_combine_limit are changed.  These are needed
+ * because the GUC subsystem doesn't support dependencies between GUCs, and
+ * they may be assigned in either order.
+ */
+void
+assign_io_max_combine_limit(int newval, void *extra)
+{
+	io_combine_limit = Min(newval, io_combine_limit_guc);
+}
+void
+assign_io_combine_limit(int newval, void *extra)
+{
+	io_combine_limit = Min(io_max_combine_limit, newval);
+}
 
 /*
  * These show hooks just exist because we want to show the values in octal.
@@ -1203,34 +1242,6 @@ check_default_with_oids(bool *newval, void **extra, GucSource source)
 		return false;
 	}
 
-	return true;
-}
-
-bool
-check_effective_io_concurrency(int *newval, void **extra, GucSource source)
-{
-#ifndef USE_PREFETCH
-	if (*newval != 0)
-	{
-		GUC_check_errdetail("\"%s\" must be set to 0 on platforms that lack support for issuing read-ahead advice.",
-							"effective_io_concurrency");
-		return false;
-	}
-#endif							/* USE_PREFETCH */
-	return true;
-}
-
-bool
-check_maintenance_io_concurrency(int *newval, void **extra, GucSource source)
-{
-#ifndef USE_PREFETCH
-	if (*newval != 0)
-	{
-		GUC_check_errdetail("\"%s\" must be set to 0 on platforms that lack support for issuing read-ahead advice.",
-							"maintenance_io_concurrency");
-		return false;
-	}
-#endif							/* USE_PREFETCH */
 	return true;
 }
 

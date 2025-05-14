@@ -14,6 +14,39 @@
 #
 # $ git log --pretty=format:"%H # %cd%n# %s" $PGINDENTGITHASH -1 --date=iso
 
+918e7287ed20eb1fe280ab6c4056ccf94dcd53a8 # 2025-04-30 19:18:30 +1200
+# Fix broken indentation
+
+e1a8b1ad587112e67fdc5aa7b388631dde4dbdda # 2025-04-04 09:38:22 -0500
+# Re-pgindent pg_largeobject.c after commit 0d6c477664.
+
+796bdda484c838313959f65e2b700f14ac7c0e66 # 2025-03-18 09:02:36 -0400
+# Fix indentation again.
+
+203c1b4cc49455364b6bcab8034900d1c016b9cd # 2025-03-17 16:06:17 -0400
+# Fix indentation.
+
+b955df443405e056fd9047ef819a1465654f9d79 # 2025-03-13 12:41:44 +1300
+# Fix indentation issue
+
+76aa615943049c04efd36ab4765c06eda89cdfea # 2025-01-31 16:44:24 +0900
+# Fix bad indentation introduced in commit d47cbf474
+
+6e826278f1ebd9967c0f8adda29c8960a812e344 # 2025-01-13 11:27:32 +0900
+# Fix pgindent damage
+
+301de6a6f609cb3ad2d9d31fd8db9ae6c71e6dea # 2024-12-25 17:55:42 +0100
+# Partial pgindent of .l and .y files
+
+53dcba9be5746cc126bdb949bf81c29ea2cfc24d # 2024-11-21 21:40:17 +0100
+# pgindent run
+
+a7f2f6adc240a2823c2344b89e90bb630dea8803 # 2024-10-16 12:21:13 -0700
+# Whitespace fixup from generated unicode tables.
+
+7f7474a8e4002ac9fd4979cc7b16b50b70b70c28 # 2024-09-27 11:14:31 -0400
+# Reindent pg_verifybackup.c.
+
 7229ebe011dff3f418251a4836f6d098923aa1e1 # 2024-08-26 16:16:12 -0700
 # Fix identation.
 

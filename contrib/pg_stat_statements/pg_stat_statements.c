@@ -34,7 +34,7 @@
  * in the file to be read or written while holding only shared lock.
  *
  *
- * Copyright (c) 2008-2024, PostgreSQL Global Development Group
+ * Copyright (c) 2008-2025, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
  *	  contrib/pg_stat_statements/pg_stat_statements.c
@@ -49,7 +49,6 @@
 
 #include "access/parallel.h"
 #include "catalog/pg_authid.h"
-#include "common/hashfn.h"
 #include "common/int.h"
 #include "executor/instrument.h"
 #include "funcapi.h"
@@ -59,9 +58,7 @@
 #include "nodes/queryjumble.h"
 #include "optimizer/planner.h"
 #include "parser/analyze.h"
-#include "parser/parsetree.h"
 #include "parser/scanner.h"
-#include "parser/scansup.h"
 #include "pgstat.h"
 #include "storage/fd.h"
 #include "storage/ipc.h"
@@ -74,7 +71,10 @@
 #include "utils/memutils.h"
 #include "utils/timestamp.h"
 
-PG_MODULE_MAGIC;
+PG_MODULE_MAGIC_EXT(
+					.name = "pg_stat_statements",
+					.version = PG_VERSION
+);
 
 /* Location of permanent stats file (valid when database is shut down) */
 #define PGSS_DUMP_FILE	PGSTAT_STAT_PERMANENT_DIRECTORY "/pg_stat_statements.stat"
@@ -113,6 +113,7 @@ typedef enum pgssVersion
 	PGSS_V1_9,
 	PGSS_V1_10,
 	PGSS_V1_11,
+	PGSS_V1_12,
 } pgssVersion;
 
 typedef enum pgssStoreKind
@@ -126,9 +127,9 @@ typedef enum pgssStoreKind
 	 */
 	PGSS_PLAN = 0,
 	PGSS_EXEC,
-
-	PGSS_NUMKIND				/* Must be last value of this enum */
 } pgssStoreKind;
+
+#define PGSS_NUMKIND (PGSS_EXEC + 1)
 
 /*
  * Hashtable key that defines the identity of a hashtable entry.  We separate
@@ -189,6 +190,7 @@ typedef struct Counters
 	int64		wal_records;	/* # of WAL records generated */
 	int64		wal_fpi;		/* # of WAL full page images generated */
 	uint64		wal_bytes;		/* total amount of WAL generated in bytes */
+	int64		wal_buffers_full;	/* # of times the WAL buffers became full */
 	int64		jit_functions;	/* total number of JIT functions emitted */
 	double		jit_generation_time;	/* total time to generate jit code */
 	int64		jit_inlining_count; /* number of times inlining time has been
@@ -204,6 +206,10 @@ typedef struct Counters
 	int64		jit_emission_count; /* number of times emission time has been
 									 * > 0 */
 	double		jit_emission_time;	/* total time to emit jit code */
+	int64		parallel_workers_to_launch; /* # of parallel workers planned
+											 * to be launched */
+	int64		parallel_workers_launched;	/* # of parallel workers actually
+											 * launched */
 } Counters;
 
 /*
@@ -254,7 +260,7 @@ typedef struct pgssSharedState
 /* Current nesting depth of planner/ExecutorRun/ProcessUtility calls */
 static int	nesting_level = 0;
 
-/* Saved hook values in case of unload */
+/* Saved hook values */
 static shmem_request_hook_type prev_shmem_request_hook = NULL;
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 static post_parse_analyze_hook_type prev_post_parse_analyze_hook = NULL;
@@ -293,7 +299,6 @@ static bool pgss_track_planning = false;	/* whether to track planning
 											 * duration */
 static bool pgss_save = true;	/* whether to save stats across shutdown */
 
-
 #define pgss_enabled(level) \
 	(!IsParallelWorker() && \
 	(pgss_track == PGSS_TRACK_ALL || \
@@ -317,6 +322,7 @@ PG_FUNCTION_INFO_V1(pg_stat_statements_1_8);
 PG_FUNCTION_INFO_V1(pg_stat_statements_1_9);
 PG_FUNCTION_INFO_V1(pg_stat_statements_1_10);
 PG_FUNCTION_INFO_V1(pg_stat_statements_1_11);
+PG_FUNCTION_INFO_V1(pg_stat_statements_1_12);
 PG_FUNCTION_INFO_V1(pg_stat_statements);
 PG_FUNCTION_INFO_V1(pg_stat_statements_info);
 
@@ -329,10 +335,10 @@ static PlannedStmt *pgss_planner(Query *parse,
 								 const char *query_string,
 								 int cursorOptions,
 								 ParamListInfo boundParams);
-static void pgss_ExecutorStart(QueryDesc *queryDesc, int eflags);
+static bool pgss_ExecutorStart(QueryDesc *queryDesc, int eflags);
 static void pgss_ExecutorRun(QueryDesc *queryDesc,
 							 ScanDirection direction,
-							 uint64 count, bool execute_once);
+							 uint64 count);
 static void pgss_ExecutorFinish(QueryDesc *queryDesc);
 static void pgss_ExecutorEnd(QueryDesc *queryDesc);
 static void pgss_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
@@ -347,7 +353,9 @@ static void pgss_store(const char *query, uint64 queryId,
 					   const BufferUsage *bufusage,
 					   const WalUsage *walusage,
 					   const struct JitInstrumentation *jitusage,
-					   JumbleState *jstate);
+					   JumbleState *jstate,
+					   int parallel_workers_to_launch,
+					   int parallel_workers_launched);
 static void pg_stat_statements_internal(FunctionCallInfo fcinfo,
 										pgssVersion api_version,
 										bool showtext);
@@ -867,7 +875,9 @@ pgss_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jstate)
 				   NULL,
 				   NULL,
 				   NULL,
-				   jstate);
+				   jstate,
+				   0,
+				   0);
 }
 
 /*
@@ -945,7 +955,9 @@ pgss_planner(Query *parse,
 				   &bufusage,
 				   &walusage,
 				   NULL,
-				   NULL);
+				   NULL,
+				   0,
+				   0);
 	}
 	else
 	{
@@ -977,13 +989,19 @@ pgss_planner(Query *parse,
 /*
  * ExecutorStart hook: start up tracking if needed
  */
-static void
+static bool
 pgss_ExecutorStart(QueryDesc *queryDesc, int eflags)
 {
+	bool		plan_valid;
+
 	if (prev_ExecutorStart)
-		prev_ExecutorStart(queryDesc, eflags);
+		plan_valid = prev_ExecutorStart(queryDesc, eflags);
 	else
-		standard_ExecutorStart(queryDesc, eflags);
+		plan_valid = standard_ExecutorStart(queryDesc, eflags);
+
+	/* The plan may have become invalid during standard_ExecutorStart() */
+	if (!plan_valid)
+		return false;
 
 	/*
 	 * If query has queryId zero, don't track it.  This prevents double
@@ -1006,22 +1024,23 @@ pgss_ExecutorStart(QueryDesc *queryDesc, int eflags)
 			MemoryContextSwitchTo(oldcxt);
 		}
 	}
+
+	return true;
 }
 
 /*
  * ExecutorRun hook: all we need do is track nesting depth
  */
 static void
-pgss_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, uint64 count,
-				 bool execute_once)
+pgss_ExecutorRun(QueryDesc *queryDesc, ScanDirection direction, uint64 count)
 {
 	nesting_level++;
 	PG_TRY();
 	{
 		if (prev_ExecutorRun)
-			prev_ExecutorRun(queryDesc, direction, count, execute_once);
+			prev_ExecutorRun(queryDesc, direction, count);
 		else
-			standard_ExecutorRun(queryDesc, direction, count, execute_once);
+			standard_ExecutorRun(queryDesc, direction, count);
 	}
 	PG_FINALLY();
 	{
@@ -1078,7 +1097,9 @@ pgss_ExecutorEnd(QueryDesc *queryDesc)
 				   &queryDesc->totaltime->bufusage,
 				   &queryDesc->totaltime->walusage,
 				   queryDesc->estate->es_jit ? &queryDesc->estate->es_jit->instr : NULL,
-				   NULL);
+				   NULL,
+				   queryDesc->estate->es_parallel_workers_to_launch,
+				   queryDesc->estate->es_parallel_workers_launched);
 	}
 
 	if (prev_ExecutorEnd)
@@ -1209,7 +1230,9 @@ pgss_ProcessUtility(PlannedStmt *pstmt, const char *queryString,
 				   &bufusage,
 				   &walusage,
 				   NULL,
-				   NULL);
+				   NULL,
+				   0,
+				   0);
 	}
 	else
 	{
@@ -1270,7 +1293,9 @@ pgss_store(const char *query, uint64 queryId,
 		   const BufferUsage *bufusage,
 		   const WalUsage *walusage,
 		   const struct JitInstrumentation *jitusage,
-		   JumbleState *jstate)
+		   JumbleState *jstate,
+		   int parallel_workers_to_launch,
+		   int parallel_workers_launched)
 {
 	pgssHashKey key;
 	pgssEntry  *entry;
@@ -1451,6 +1476,7 @@ pgss_store(const char *query, uint64 queryId,
 		entry->counters.wal_records += walusage->wal_records;
 		entry->counters.wal_fpi += walusage->wal_fpi;
 		entry->counters.wal_bytes += walusage->wal_bytes;
+		entry->counters.wal_buffers_full += walusage->wal_buffers_full;
 		if (jitusage)
 		{
 			entry->counters.jit_functions += jitusage->created_functions;
@@ -1472,6 +1498,10 @@ pgss_store(const char *query, uint64 queryId,
 				entry->counters.jit_emission_count++;
 			entry->counters.jit_emission_time += INSTR_TIME_GET_MILLISEC(jitusage->emission_counter);
 		}
+
+		/* parallel worker counters */
+		entry->counters.parallel_workers_to_launch += parallel_workers_to_launch;
+		entry->counters.parallel_workers_launched += parallel_workers_launched;
 
 		SpinLockRelease(&entry->mutex);
 	}
@@ -1539,7 +1569,8 @@ pg_stat_statements_reset(PG_FUNCTION_ARGS)
 #define PG_STAT_STATEMENTS_COLS_V1_9	33
 #define PG_STAT_STATEMENTS_COLS_V1_10	43
 #define PG_STAT_STATEMENTS_COLS_V1_11	49
-#define PG_STAT_STATEMENTS_COLS			49	/* maximum of above */
+#define PG_STAT_STATEMENTS_COLS_V1_12	52
+#define PG_STAT_STATEMENTS_COLS			52	/* maximum of above */
 
 /*
  * Retrieve statement statistics.
@@ -1551,6 +1582,16 @@ pg_stat_statements_reset(PG_FUNCTION_ARGS)
  * expected API version is identified by embedding it in the C name of the
  * function.  Unfortunately we weren't bright enough to do that for 1.1.
  */
+Datum
+pg_stat_statements_1_12(PG_FUNCTION_ARGS)
+{
+	bool		showtext = PG_GETARG_BOOL(0);
+
+	pg_stat_statements_internal(fcinfo, PGSS_V1_12, showtext);
+
+	return (Datum) 0;
+}
+
 Datum
 pg_stat_statements_1_11(PG_FUNCTION_ARGS)
 {
@@ -1695,6 +1736,10 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 			if (api_version != PGSS_V1_11)
 				elog(ERROR, "incorrect number of output arguments");
 			break;
+		case PG_STAT_STATEMENTS_COLS_V1_12:
+			if (api_version != PGSS_V1_12)
+				elog(ERROR, "incorrect number of output arguments");
+			break;
 		default:
 			elog(ERROR, "incorrect number of output arguments");
 	}
@@ -1835,9 +1880,14 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 		/* copy counters to a local variable to keep locking time short */
 		SpinLockAcquire(&entry->mutex);
 		tmp = entry->counters;
+		SpinLockRelease(&entry->mutex);
+
+		/*
+		 * The spinlock is not required when reading these two as they are
+		 * always updated when holding pgss->lock exclusively.
+		 */
 		stats_since = entry->stats_since;
 		minmax_stats_since = entry->minmax_stats_since;
-		SpinLockRelease(&entry->mutex);
 
 		/* Skip entry if unexecuted (ie, it's a pending "sticky" entry) */
 		if (IS_STICKY(tmp))
@@ -1917,6 +1967,10 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 											Int32GetDatum(-1));
 			values[i++] = wal_bytes;
 		}
+		if (api_version >= PGSS_V1_12)
+		{
+			values[i++] = Int64GetDatumFast(tmp.wal_buffers_full);
+		}
 		if (api_version >= PGSS_V1_10)
 		{
 			values[i++] = Int64GetDatumFast(tmp.jit_functions);
@@ -1932,6 +1986,14 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 		{
 			values[i++] = Int64GetDatumFast(tmp.jit_deform_count);
 			values[i++] = Float8GetDatumFast(tmp.jit_deform_time);
+		}
+		if (api_version >= PGSS_V1_12)
+		{
+			values[i++] = Int64GetDatumFast(tmp.parallel_workers_to_launch);
+			values[i++] = Int64GetDatumFast(tmp.parallel_workers_launched);
+		}
+		if (api_version >= PGSS_V1_11)
+		{
 			values[i++] = TimestampTzGetDatum(stats_since);
 			values[i++] = TimestampTzGetDatum(minmax_stats_since);
 		}
@@ -1944,6 +2006,7 @@ pg_stat_statements_internal(FunctionCallInfo fcinfo,
 					 api_version == PGSS_V1_9 ? PG_STAT_STATEMENTS_COLS_V1_9 :
 					 api_version == PGSS_V1_10 ? PG_STAT_STATEMENTS_COLS_V1_10 :
 					 api_version == PGSS_V1_11 ? PG_STAT_STATEMENTS_COLS_V1_11 :
+					 api_version == PGSS_V1_12 ? PG_STAT_STATEMENTS_COLS_V1_12 :
 					 -1 /* fail if you forget to update this assert */ ));
 
 		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc, values, nulls);
@@ -2762,6 +2825,10 @@ generate_normalized_query(JumbleState *jstate, const char *query,
 				n_quer_loc = 0, /* Normalized query byte location */
 				last_off = 0,	/* Offset from start for previous tok */
 				last_tok_len = 0;	/* Length (in bytes) of that tok */
+	bool		in_squashed = false;	/* in a run of squashed consts? */
+	int			skipped_constants = 0;	/* Position adjustment of later
+										 * constants after squashed ones */
+
 
 	/*
 	 * Get constants' lengths (core system only gives us locations).  Note
@@ -2775,6 +2842,9 @@ generate_normalized_query(JumbleState *jstate, const char *query,
 	 * certainly isn't more than 11 bytes, even if n reaches INT_MAX.  We
 	 * could refine that limit based on the max value of n for the current
 	 * query, but it hardly seems worth any extra effort to do so.
+	 *
+	 * Note this also gives enough room for the commented-out ", ..." list
+	 * syntax used by constant squashing.
 	 */
 	norm_query_buflen = query_len + jstate->clocations_count * 10;
 
@@ -2787,6 +2857,7 @@ generate_normalized_query(JumbleState *jstate, const char *query,
 					tok_len;	/* Length (in bytes) of that tok */
 
 		off = jstate->clocations[i].location;
+
 		/* Adjust recorded location if we're dealing with partial string */
 		off -= query_loc;
 
@@ -2795,18 +2866,67 @@ generate_normalized_query(JumbleState *jstate, const char *query,
 		if (tok_len < 0)
 			continue;			/* ignore any duplicates */
 
-		/* Copy next chunk (what precedes the next constant) */
-		len_to_wrt = off - last_off;
-		len_to_wrt -= last_tok_len;
+		/*
+		 * What to do next depends on whether we're squashing constant lists,
+		 * and whether we're already in a run of such constants.
+		 */
+		if (!jstate->clocations[i].squashed)
+		{
+			/*
+			 * This location corresponds to a constant not to be squashed.
+			 * Print what comes before the constant ...
+			 */
+			len_to_wrt = off - last_off;
+			len_to_wrt -= last_tok_len;
 
-		Assert(len_to_wrt >= 0);
-		memcpy(norm_query + n_quer_loc, query + quer_loc, len_to_wrt);
-		n_quer_loc += len_to_wrt;
+			Assert(len_to_wrt >= 0);
 
-		/* And insert a param symbol in place of the constant token */
-		n_quer_loc += sprintf(norm_query + n_quer_loc, "$%d",
-							  i + 1 + jstate->highest_extern_param_id);
+			memcpy(norm_query + n_quer_loc, query + quer_loc, len_to_wrt);
+			n_quer_loc += len_to_wrt;
 
+			/* ... and then a param symbol replacing the constant itself */
+			n_quer_loc += sprintf(norm_query + n_quer_loc, "$%d",
+								  i + 1 + jstate->highest_extern_param_id - skipped_constants);
+
+			/* In case previous constants were merged away, stop doing that */
+			in_squashed = false;
+		}
+		else if (!in_squashed)
+		{
+			/*
+			 * This location is the start position of a run of constants to be
+			 * squashed, so we need to print the representation of starting a
+			 * group of stashed constants.
+			 *
+			 * Print what comes before the constant ...
+			 */
+			len_to_wrt = off - last_off;
+			len_to_wrt -= last_tok_len;
+			Assert(len_to_wrt >= 0);
+			Assert(i + 1 < jstate->clocations_count);
+			Assert(jstate->clocations[i + 1].squashed);
+			memcpy(norm_query + n_quer_loc, query + quer_loc, len_to_wrt);
+			n_quer_loc += len_to_wrt;
+
+			/* ... and then start a run of squashed constants */
+			n_quer_loc += sprintf(norm_query + n_quer_loc, "$%d /*, ... */",
+								  i + 1 + jstate->highest_extern_param_id - skipped_constants);
+
+			/* The next location will match the block below, to end the run */
+			in_squashed = true;
+
+			skipped_constants++;
+		}
+		else
+		{
+			/*
+			 * The second location of a run of squashable elements; this
+			 * indicates its end.
+			 */
+			in_squashed = false;
+		}
+
+		/* Otherwise the constant is squashed away -- move forward */
 		quer_loc = off + tok_len;
 		last_off = off;
 		last_tok_len = tok_len;

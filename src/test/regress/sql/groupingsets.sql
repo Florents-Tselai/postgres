@@ -172,6 +172,17 @@ select x, not x as not_x, q2 from
   group by grouping sets(x, q2)
   order by x, q2;
 
+select x, y
+  from (select four as x, four as y from tenk1) as t
+  group by grouping sets (x, y)
+  having y is null
+  order by 1, 2;
+
+select x, y || 'y'
+  from (select four as x, four as y from tenk1) as t
+  group by grouping sets (x, y)
+  order by 1, 2;
+
 -- check qual push-down rules for a subquery with grouping sets
 explain (verbose, costs off)
 select * from (
@@ -278,6 +289,11 @@ select v.c, (select count(*) from gstest2 group by () having v.c)
 explain (costs off)
   select v.c, (select count(*) from gstest2 group by () having v.c)
     from (values (false),(true)) v(c) order by v.c;
+
+-- test pushdown of HAVING clause that does not reference any columns that are nullable by grouping sets
+explain (costs off)
+select a, b, count(*) from gstest2 group by grouping sets ((a, b), (a)) having a > 1 and b > 1;
+select a, b, count(*) from gstest2 group by grouping sets ((a, b), (a)) having a > 1 and b > 1;
 
 -- HAVING with GROUPING queries
 select ten, grouping(ten) from onek

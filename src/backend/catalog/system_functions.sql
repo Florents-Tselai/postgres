@@ -1,7 +1,7 @@
 /*
  * PostgreSQL System Functions
  *
- * Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Copyright (c) 1996-2025, PostgreSQL Global Development Group
  *
  * src/backend/catalog/system_functions.sql
  *
@@ -414,9 +414,6 @@ CREATE OR REPLACE FUNCTION
   json_populate_recordset(base anyelement, from_json json, use_json_as_text boolean DEFAULT false)
   RETURNS SETOF anyelement LANGUAGE internal STABLE ROWS 100  AS 'json_populate_recordset' PARALLEL SAFE;
 
-CREATE OR REPLACE PROCEDURE pg_wal_replay_wait(target_lsn pg_lsn, timeout int8 DEFAULT 0)
-  LANGUAGE internal AS 'pg_wal_replay_wait';
-
 CREATE OR REPLACE FUNCTION pg_logical_slot_get_changes(
     IN slot_name name, IN upto_lsn pg_lsn, IN upto_nchanges int, VARIADIC options text[] DEFAULT '{}',
     OUT lsn pg_lsn, OUT xid xid, OUT data text)
@@ -610,6 +607,20 @@ LANGUAGE INTERNAL
 STRICT STABLE PARALLEL SAFE
 AS 'jsonb_path_query_first_tz';
 
+CREATE OR REPLACE FUNCTION
+  jsonb_strip_nulls(target jsonb, strip_in_arrays boolean DEFAULT false)
+RETURNS jsonb
+LANGUAGE INTERNAL
+STRICT STABLE PARALLEL SAFE
+AS 'jsonb_strip_nulls';
+
+CREATE OR REPLACE FUNCTION
+  json_strip_nulls(target json, strip_in_arrays boolean DEFAULT false)
+RETURNS json
+LANGUAGE INTERNAL
+STRICT STABLE PARALLEL SAFE
+AS 'json_strip_nulls';
+
 -- default normalization form is NFC, per SQL standard
 CREATE OR REPLACE FUNCTION
   "normalize"(text, text DEFAULT 'NFC')
@@ -682,6 +693,8 @@ REVOKE EXECUTE ON FUNCTION pg_stat_reset_single_table_counters(oid) FROM public;
 
 REVOKE EXECUTE ON FUNCTION pg_stat_reset_single_function_counters(oid) FROM public;
 
+REVOKE EXECUTE ON FUNCTION pg_stat_reset_backend_stats(integer) FROM public;
+
 REVOKE EXECUTE ON FUNCTION pg_stat_reset_replication_slot(text) FROM public;
 
 REVOKE EXECUTE ON FUNCTION pg_stat_have_stats(text, oid, int8) FROM public;
@@ -699,6 +712,8 @@ REVOKE EXECUTE ON FUNCTION pg_ls_logdir() FROM public;
 REVOKE EXECUTE ON FUNCTION pg_ls_waldir() FROM public;
 
 REVOKE EXECUTE ON FUNCTION pg_ls_archive_statusdir() FROM public;
+
+REVOKE EXECUTE ON FUNCTION pg_ls_summariesdir() FROM public;
 
 REVOKE EXECUTE ON FUNCTION pg_ls_tmpdir() FROM public;
 
@@ -769,6 +784,8 @@ GRANT EXECUTE ON FUNCTION pg_ls_logdir() TO pg_monitor;
 GRANT EXECUTE ON FUNCTION pg_ls_waldir() TO pg_monitor;
 
 GRANT EXECUTE ON FUNCTION pg_ls_archive_statusdir() TO pg_monitor;
+
+GRANT EXECUTE ON FUNCTION pg_ls_summariesdir() TO pg_monitor;
 
 GRANT EXECUTE ON FUNCTION pg_ls_tmpdir() TO pg_monitor;
 

@@ -24,7 +24,7 @@ BEGIN
     SET LOCAL jit = 0;
 
     FOR ln IN
-        EXECUTE format('explain (analyze %s, costs on, summary off, timing off) %s',
+        EXECUTE format('explain (analyze %s, costs on, summary off, timing off, buffers off) %s',
             analyze_str, query)
     LOOP
         IF hide_costs = true THEN
@@ -163,6 +163,7 @@ select (w).size = :segsize as ok
 from (select pg_ls_waldir() w) ss where length((w).name) = 24 limit 1;
 
 select count(*) >= 0 as ok from pg_ls_archive_statusdir();
+select count(*) >= 0 as ok from pg_ls_summariesdir();
 
 -- pg_read_file()
 select length(pg_read_file('postmaster.pid')) > 20;
@@ -310,6 +311,44 @@ false, true, false, true);
 -- the support function.
 SELECT * FROM generate_series(TIMESTAMPTZ '2024-02-01', TIMESTAMPTZ '2024-03-01', INTERVAL '0 day') g(s);
 
+--
+-- Test the SupportRequestRows support function for generate_series_numeric()
+--
+
+-- Ensure the row estimate matches the actual rows
+SELECT explain_mask_costs($$
+SELECT * FROM generate_series(1.0, 25.0) g(s);$$,
+true, true, false, true);
+
+-- As above but with non-default step
+SELECT explain_mask_costs($$
+SELECT * FROM generate_series(1.0, 25.0, 2.0) g(s);$$,
+true, true, false, true);
+
+-- Ensure the estimates match when step is decreasing
+SELECT explain_mask_costs($$
+SELECT * FROM generate_series(25.0, 1.0, -1.0) g(s);$$,
+true, true, false, true);
+
+-- Ensure an empty range estimates 1 row
+SELECT explain_mask_costs($$
+SELECT * FROM generate_series(25.0, 1.0, 1.0) g(s);$$,
+true, true, false, true);
+
+-- Ensure we get the default row estimate for error cases (infinity/NaN values
+-- and zero step size)
+SELECT explain_mask_costs($$
+SELECT * FROM generate_series('-infinity'::NUMERIC, 'infinity'::NUMERIC, 1.0) g(s);$$,
+false, true, false, true);
+
+SELECT explain_mask_costs($$
+SELECT * FROM generate_series(1.0, 25.0, 'NaN'::NUMERIC) g(s);$$,
+false, true, false, true);
+
+SELECT explain_mask_costs($$
+SELECT * FROM generate_series(25.0, 2.0, 0.0) g(s);$$,
+false, true, false, true);
+
 -- Test functions for control data
 SELECT count(*) > 0 AS ok FROM pg_control_checkpoint();
 SELECT count(*) > 0 AS ok FROM pg_control_init();
@@ -362,5 +401,16 @@ DROP TABLE test_chunk_id;
 DROP FUNCTION explain_mask_costs(text, bool, bool, bool, bool);
 
 -- test stratnum support functions
-SELECT gist_stratnum_identity(3::smallint);
-SELECT gist_stratnum_identity(18::smallint);
+SELECT gist_stratnum_common(7);
+SELECT gist_stratnum_common(3);
+
+
+-- relpath tests
+CREATE FUNCTION test_relpath()
+    RETURNS void
+    AS :'regresslib'
+    LANGUAGE C;
+SELECT test_relpath();
+
+-- pg_replication_origin.roname limit
+SELECT pg_replication_origin_create('regress_' || repeat('a', 505));

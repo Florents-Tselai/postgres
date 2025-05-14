@@ -3,7 +3,7 @@
  * pg_verifybackup.h
  *	  Verify a backup against a backup manifest.
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/bin/pg_verifybackup/pg_verifybackup.h
@@ -18,6 +18,7 @@
 #include "common/hashfn_unstable.h"
 #include "common/logging.h"
 #include "common/parse_manifest.h"
+#include "fe_utils/astreamer.h"
 #include "fe_utils/simple_list.h"
 
 /*
@@ -28,7 +29,7 @@ typedef struct manifest_file
 {
 	uint32		status;			/* hash status */
 	const char *pathname;
-	size_t		size;
+	uint64		size;
 	pg_checksum_type checksum_type;
 	int			checksum_length;
 	uint8	   *checksum_payload;
@@ -88,6 +89,7 @@ typedef struct verifier_context
 	manifest_data *manifest;
 	char	   *backup_directory;
 	SimpleStringList ignore_list;
+	char		format;			/* backup format:  p(lain)/t(ar) */
 	bool		skip_checksums;
 	bool		exit_on_error;
 	bool		saw_any_error;
@@ -96,9 +98,14 @@ typedef struct verifier_context
 extern void report_backup_error(verifier_context *context,
 								const char *pg_restrict fmt,...)
 			pg_attribute_printf(2, 3);
-extern void report_fatal_error(const char *pg_restrict fmt,...)
-			pg_attribute_printf(1, 2) pg_attribute_noreturn();
+pg_noreturn extern void report_fatal_error(const char *pg_restrict fmt,...)
+			pg_attribute_printf(1, 2);
 extern bool should_ignore_relpath(verifier_context *context,
 								  const char *relpath);
+
+extern astreamer *astreamer_verify_content_new(astreamer *next,
+											   verifier_context *context,
+											   char *archive_name,
+											   Oid tblspc_oid);
 
 #endif							/* PG_VERIFYBACKUP_H */

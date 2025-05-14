@@ -6,10 +6,10 @@
  * the whole archive to a single file, and astreamer_extractor writes
  * each archive member to a separate file in a given directory.
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  *
  * IDENTIFICATION
- *		  src/bin/pg_basebackup/astreamer_file.c
+ *		  src/fe_utils/astreamer_file.c
  *-------------------------------------------------------------------------
  */
 
@@ -19,7 +19,6 @@
 
 #include "common/file_perm.h"
 #include "common/logging.h"
-#include "common/string.h"
 #include "fe_utils/astreamer.h"
 
 typedef struct astreamer_plain_writer

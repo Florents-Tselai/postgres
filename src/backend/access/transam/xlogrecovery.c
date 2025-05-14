@@ -14,7 +14,7 @@
  * for interrogating recovery state and controlling the recovery process.
  *
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/backend/access/transam/xlogrecovery.c
@@ -43,7 +43,6 @@
 #include "backup/basebackup.h"
 #include "catalog/pg_control.h"
 #include "commands/tablespace.h"
-#include "commands/waitlsn.h"
 #include "common/file_utils.h"
 #include "miscadmin.h"
 #include "pgstat.h"
@@ -61,6 +60,7 @@
 #include "utils/datetime.h"
 #include "utils/fmgrprotos.h"
 #include "utils/guc_hooks.h"
+#include "utils/pgstat_internal.h"
 #include "utils/pg_lsn.h"
 #include "utils/ps_status.h"
 #include "utils/pg_rusage.h"
@@ -291,6 +291,11 @@ static bool backupEndRequired = false;
  * Consistent state means that the system is internally consistent, all
  * the WAL has been replayed up to a certain point, and importantly, there
  * is no trace of later actions on disk.
+ *
+ * This flag is used only by the startup process and postmaster. When
+ * minRecoveryPoint is reached, the startup process sets it to true and
+ * sends a PMSIGNAL_RECOVERY_CONSISTENT signal to the postmaster,
+ * which then sets it to true upon receiving the signal.
  */
 bool		reachedConsistency = false;
 
@@ -845,13 +850,15 @@ InitWalRecovery(ControlFileData *ControlFile, bool *wasShutdown_ptr,
 		 * tliSwitchPoint will throw an error if the checkpoint's timeline is
 		 * not in expectedTLEs at all.
 		 */
-		switchpoint = tliSwitchPoint(ControlFile->checkPointCopy.ThisTimeLineID, expectedTLEs, NULL);
+		switchpoint = tliSwitchPoint(CheckPointTLI, expectedTLEs, NULL);
 		ereport(FATAL,
 				(errmsg("requested timeline %u is not a child of this server's history",
 						recoveryTargetTLI),
-				 errdetail("Latest checkpoint is at %X/%X on timeline %u, but in the history of the requested timeline, the server forked off from that timeline at %X/%X.",
-						   LSN_FORMAT_ARGS(ControlFile->checkPoint),
-						   ControlFile->checkPointCopy.ThisTimeLineID,
+		/* translator: %s is a backup_label file or a pg_control file */
+				 errdetail("Latest checkpoint in file \"%s\" is at %X/%X on timeline %u, but in the history of the requested timeline, the server forked off from that timeline at %X/%X.",
+						   haveBackupLabel ? "backup_label" : "pg_control",
+						   LSN_FORMAT_ARGS(CheckPointLoc),
+						   CheckPointTLI,
 						   LSN_FORMAT_ARGS(switchpoint))));
 	}
 
@@ -1772,7 +1779,7 @@ PerformWalRecovery(void)
 #endif
 
 			/* Handle interrupt signals of startup process */
-			HandleStartupProcInterrupts();
+			ProcessStartupProcInterrupts();
 
 			/*
 			 * Pause WAL replay, if requested by a hot-standby session via
@@ -1828,16 +1835,6 @@ PerformWalRecovery(void)
 				reachedRecoveryTarget = true;
 				break;
 			}
-
-			/*
-			 * If we replayed an LSN that someone was waiting for then walk
-			 * over the shared memory array and set latches to notify the
-			 * waiters.
-			 */
-			if (waitLSNState &&
-				(XLogRecoveryCtl->lastReplayedEndRecPtr >=
-				 pg_atomic_read_u64(&waitLSNState->minWaitedLSN)))
-				WaitLSNSetLatches(XLogRecoveryCtl->lastReplayedEndRecPtr);
 
 			/* Else, try to fetch the next WAL record */
 			record = ReadRecord(xlogprefetcher, LOG, false, replayTLI);
@@ -1924,7 +1921,7 @@ ApplyWalRecord(XLogReaderState *xlogreader, XLogRecord *record, TimeLineID *repl
 
 	/* Setup error traceback support for ereport() */
 	errcallback.callback = rm_redo_error_callback;
-	errcallback.arg = (void *) xlogreader;
+	errcallback.arg = xlogreader;
 	errcallback.previous = error_context_stack;
 	error_context_stack = &errcallback;
 
@@ -2256,6 +2253,7 @@ CheckRecoveryConsistency(void)
 		CheckTablespaceDirectory();
 
 		reachedConsistency = true;
+		SendPostmasterSignal(PMSIGNAL_RECOVERY_CONSISTENT);
 		ereport(LOG,
 				(errmsg("consistent recovery state reached at %X/%X",
 						LSN_FORMAT_ARGS(lastReplayedEndRecPtr))));
@@ -2957,7 +2955,7 @@ recoveryPausesHere(bool endOfRecovery)
 	/* loop until recoveryPauseState is set to RECOVERY_NOT_PAUSED */
 	while (GetRecoveryPauseState() != RECOVERY_NOT_PAUSED)
 	{
-		HandleStartupProcInterrupts();
+		ProcessStartupProcInterrupts();
 		if (CheckForStandbyTrigger())
 			return;
 
@@ -3046,7 +3044,7 @@ recoveryApplyDelay(XLogReaderState *record)
 		ResetLatch(&XLogRecoveryCtl->recoveryWakeupLatch);
 
 		/* This might change recovery_min_apply_delay. */
-		HandleStartupProcInterrupts();
+		ProcessStartupProcInterrupts();
 
 		if (CheckForStandbyTrigger())
 			break;
@@ -3317,6 +3315,7 @@ XLogPageRead(XLogReaderState *xlogreader, XLogRecPtr targetPagePtr, int reqLen,
 	uint32		targetPageOff;
 	XLogSegNo	targetSegNo PG_USED_FOR_ASSERTS_ONLY;
 	int			r;
+	instr_time	io_start;
 
 	XLByteToSeg(targetPagePtr, targetSegNo, wal_segment_size);
 	targetPageOff = XLogSegmentOffset(targetPagePtr, wal_segment_size);
@@ -3409,6 +3408,9 @@ retry:
 	/* Read the requested page */
 	readOff = targetPageOff;
 
+	/* Measure I/O timing when reading segment */
+	io_start = pgstat_prepare_io_time(track_wal_io_timing);
+
 	pgstat_report_wait_start(WAIT_EVENT_WAL_READ);
 	r = pg_pread(readFile, readBuf, XLOG_BLCKSZ, (off_t) readOff);
 	if (r != XLOG_BLCKSZ)
@@ -3417,6 +3419,10 @@ retry:
 		int			save_errno = errno;
 
 		pgstat_report_wait_end();
+
+		pgstat_count_io_op_time(IOOBJECT_WAL, IOCONTEXT_NORMAL, IOOP_READ,
+								io_start, 1, r);
+
 		XLogFileName(fname, curFileTLI, readSegNo, wal_segment_size);
 		if (r < 0)
 		{
@@ -3437,6 +3443,9 @@ retry:
 	}
 	pgstat_report_wait_end();
 
+	pgstat_count_io_op_time(IOOBJECT_WAL, IOCONTEXT_NORMAL, IOOP_READ,
+							io_start, 1, r);
+
 	Assert(targetSegNo == readSegNo);
 	Assert(targetPageOff == readOff);
 	Assert(reqLen <= readLen);
@@ -3449,12 +3458,12 @@ retry:
 	 * validates the page header anyway, and would propagate the failure up to
 	 * ReadRecord(), which would retry. However, there's a corner case with
 	 * continuation records, if a record is split across two pages such that
-	 * we would need to read the two pages from different sources. For
-	 * example, imagine a scenario where a streaming replica is started up,
-	 * and replay reaches a record that's split across two WAL segments. The
-	 * first page is only available locally, in pg_wal, because it's already
-	 * been recycled on the primary. The second page, however, is not present
-	 * in pg_wal, and we should stream it from the primary. There is a
+	 * we would need to read the two pages from different sources across two
+	 * WAL segments.
+	 *
+	 * The first page is only available locally, in pg_wal, because it's
+	 * already been recycled on the primary. The second page, however, is not
+	 * present in pg_wal, and we should stream it from the primary. There is a
 	 * recycled WAL segment present in pg_wal, with garbage contents, however.
 	 * We would read the first page from the local WAL segment, but when
 	 * reading the second page, we would read the bogus, recycled, WAL
@@ -3476,6 +3485,7 @@ retry:
 	 * responsible for the validation.
 	 */
 	if (StandbyMode &&
+		(targetPagePtr % wal_segment_size) == 0 &&
 		!XLogReaderValidatePageHeader(xlogreader, targetPagePtr, readBuf))
 	{
 		/*
@@ -3723,7 +3733,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 						now = GetCurrentTimestamp();
 
 						/* Handle interrupt signals of startup process */
-						HandleStartupProcInterrupts();
+						ProcessStartupProcInterrupts();
 					}
 					last_fail_time = now;
 					currentSource = XLOG_FROM_ARCHIVE;
@@ -4013,7 +4023,7 @@ WaitForWALToBecomeAvailable(XLogRecPtr RecPtr, bool randAccess,
 		 * This possibly-long loop needs to handle interrupts of startup
 		 * process.
 		 */
-		HandleStartupProcInterrupts();
+		ProcessStartupProcInterrupts();
 	}
 
 	return XLREAD_FAIL;			/* not reached */
@@ -4691,7 +4701,7 @@ RecoveryRequiresIntParameter(const char *param_name, int currValue, int minValue
 
 			while (GetRecoveryPauseState() != RECOVERY_NOT_PAUSED)
 			{
-				HandleStartupProcInterrupts();
+				ProcessStartupProcInterrupts();
 
 				if (CheckForStandbyTrigger())
 				{
@@ -4774,8 +4784,7 @@ check_primary_slot_name(char **newval, void **extra, GucSource source)
  * that we have odd behaviors such as unexpected GUC ordering dependencies.
  */
 
-static void
-pg_attribute_noreturn()
+pg_noreturn static void
 error_multiple_recovery_targets(void)
 {
 	ereport(ERROR,
@@ -4830,9 +4839,11 @@ check_recovery_target_lsn(char **newval, void **extra, GucSource source)
 		if (have_error)
 			return false;
 
-		myextra = (XLogRecPtr *) guc_malloc(ERROR, sizeof(XLogRecPtr));
+		myextra = (XLogRecPtr *) guc_malloc(LOG, sizeof(XLogRecPtr));
+		if (!myextra)
+			return false;
 		*myextra = lsn;
-		*extra = (void *) myextra;
+		*extra = myextra;
 	}
 	return true;
 }
@@ -4944,7 +4955,7 @@ check_recovery_target_time(char **newval, void **extra, GucSource source)
 
 			if (tm2timestamp(tm, fsec, &tz, &timestamp) != 0)
 			{
-				GUC_check_errdetail("timestamp out of range: \"%s\"", str);
+				GUC_check_errdetail("Timestamp out of range: \"%s\".", str);
 				return false;
 			}
 		}
@@ -4994,9 +5005,11 @@ check_recovery_target_timeline(char **newval, void **extra, GucSource source)
 		}
 	}
 
-	myextra = (RecoveryTargetTimeLineGoal *) guc_malloc(ERROR, sizeof(RecoveryTargetTimeLineGoal));
+	myextra = (RecoveryTargetTimeLineGoal *) guc_malloc(LOG, sizeof(RecoveryTargetTimeLineGoal));
+	if (!myextra)
+		return false;
 	*myextra = rttg;
-	*extra = (void *) myextra;
+	*extra = myextra;
 
 	return true;
 }
@@ -5030,9 +5043,11 @@ check_recovery_target_xid(char **newval, void **extra, GucSource source)
 		if (errno == EINVAL || errno == ERANGE)
 			return false;
 
-		myextra = (TransactionId *) guc_malloc(ERROR, sizeof(TransactionId));
+		myextra = (TransactionId *) guc_malloc(LOG, sizeof(TransactionId));
+		if (!myextra)
+			return false;
 		*myextra = xid;
-		*extra = (void *) myextra;
+		*extra = myextra;
 	}
 	return true;
 }

@@ -3,7 +3,7 @@
  * parse_agg.c
  *	  handle aggregates and window functions in parser
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -799,7 +799,7 @@ check_agg_arguments_walker(Node *node,
 		context->sublevels_up++;
 		result = query_tree_walker((Query *) node,
 								   check_agg_arguments_walker,
-								   (void *) context,
+								   context,
 								   0);
 		context->sublevels_up--;
 		return result;
@@ -807,7 +807,7 @@ check_agg_arguments_walker(Node *node,
 
 	return expression_tree_walker(node,
 								  check_agg_arguments_walker,
-								  (void *) context);
+								  context);
 }
 
 /*
@@ -1517,13 +1517,13 @@ substitute_grouped_columns_mutator(Node *node,
 		context->sublevels_up++;
 		newnode = query_tree_mutator((Query *) node,
 									 substitute_grouped_columns_mutator,
-									 (void *) context,
+									 context,
 									 0);
 		context->sublevels_up--;
 		return (Node *) newnode;
 	}
 	return expression_tree_mutator(node, substitute_grouped_columns_mutator,
-								   (void *) context);
+								   context);
 }
 
 /*
@@ -1691,13 +1691,13 @@ finalize_grouping_exprs_walker(Node *node,
 		context->sublevels_up++;
 		result = query_tree_walker((Query *) node,
 								   finalize_grouping_exprs_walker,
-								   (void *) context,
+								   context,
 								   0);
 		context->sublevels_up--;
 		return result;
 	}
 	return expression_tree_walker(node, finalize_grouping_exprs_walker,
-								  (void *) context);
+								  context);
 }
 
 /*
@@ -2052,7 +2052,7 @@ resolve_aggregate_transtype(Oid aggfuncid,
 
 /*
  * agg_args_support_sendreceive
- *		Returns true if all non-byval of aggref's arg types have send and
+ *		Returns true if all non-byval types of aggref's args have send and
  *		receive functions.
  */
 bool
@@ -2066,6 +2066,15 @@ agg_args_support_sendreceive(Aggref *aggref)
 		Form_pg_type pt;
 		TargetEntry *tle = (TargetEntry *) lfirst(lc);
 		Oid			type = exprType((Node *) tle->expr);
+
+		/*
+		 * RECORD is a special case: it has typsend/typreceive functions, but
+		 * record_recv only works if passed the correct typmod to identify the
+		 * specific anonymous record type.  array_agg_deserialize cannot do
+		 * that, so we have to disclaim support for the case.
+		 */
+		if (type == RECORDOID)
+			return false;
 
 		typeTuple = SearchSysCache1(TYPEOID, ObjectIdGetDatum(type));
 		if (!HeapTupleIsValid(typeTuple))

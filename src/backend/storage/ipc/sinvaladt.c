@@ -3,7 +3,7 @@
  * sinvaladt.c
  *	  POSTGRES shared cache invalidation data manager.
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -17,7 +17,6 @@
 #include <signal.h>
 #include <unistd.h>
 
-#include "access/transam.h"
 #include "miscadmin.h"
 #include "storage/ipc.h"
 #include "storage/proc.h"
@@ -199,7 +198,8 @@ typedef struct SISeg
 /*
  * We reserve a slot for each possible ProcNumber, plus one for each
  * possible auxiliary process type.  (This scheme assumes there is not
- * more than one of any auxiliary process type at a time.)
+ * more than one of any auxiliary process type at a time, except for
+ * IO workers.)
  */
 #define NumProcStateSlots	(MaxBackends + NUM_AUXILIARY_PROCS)
 

@@ -3,7 +3,7 @@
  * syscache.c
  *	  System cache management routines
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  *
@@ -287,11 +287,9 @@ HeapTuple
 SearchSysCacheLocked1(int cacheId,
 					  Datum key1)
 {
+	CatCache   *cache = SysCache[cacheId];
 	ItemPointerData tid;
 	LOCKTAG		tag;
-	Oid			dboid =
-		SysCache[cacheId]->cc_relisshared ? InvalidOid : MyDatabaseId;
-	Oid			reloid = cacheinfo[cacheId].reloid;
 
 	/*----------
 	 * Since inplace updates may happen just before our LockTuple(), we must
@@ -343,16 +341,22 @@ SearchSysCacheLocked1(int cacheId,
 
 		tid = tuple->t_self;
 		ReleaseSysCache(tuple);
-		/* like: LockTuple(rel, &tid, lockmode) */
-		SET_LOCKTAG_TUPLE(tag, dboid, reloid,
+
+		/*
+		 * Do like LockTuple(rel, &tid, lockmode).  While cc_relisshared won't
+		 * change from one iteration to another, it may have been a temporary
+		 * "false" until our first SearchSysCache1().
+		 */
+		SET_LOCKTAG_TUPLE(tag,
+						  cache->cc_relisshared ? InvalidOid : MyDatabaseId,
+						  cache->cc_reloid,
 						  ItemPointerGetBlockNumber(&tid),
 						  ItemPointerGetOffsetNumber(&tid));
 		(void) LockAcquire(&tag, lockmode, false, false);
 
 		/*
 		 * If an inplace update just finished, ensure we process the syscache
-		 * inval.  XXX this is insufficient: the inplace updater may not yet
-		 * have reached AtEOXact_Inval().  See test at inplace-inval.spec.
+		 * inval.
 		 *
 		 * If a heap_update() call just released its LOCKTAG_TUPLE, we'll
 		 * probably find the old tuple and reach "tuple concurrently updated".

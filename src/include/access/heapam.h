@@ -4,7 +4,7 @@
  *	  POSTGRES heap access method definitions.
  *
  *
- * Portions Copyright (c) 1996-2024, PostgreSQL Global Development Group
+ * Portions Copyright (c) 1996-2025, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
  * src/include/access/heapam.h
@@ -92,22 +92,20 @@ typedef struct HeapScanDescData
 	 */
 	ParallelBlockTableScanWorkerData *rs_parallelworkerdata;
 
-	/*
-	 * These fields are only used for bitmap scans for the "skip fetch"
-	 * optimization. Bitmap scans needing no fields from the heap may skip
-	 * fetching an all visible block, instead using the number of tuples per
-	 * block reported by the bitmap to determine how many NULL-filled tuples
-	 * to return.
-	 */
-	Buffer		rs_vmbuffer;
-	int			rs_empty_tuples_pending;
-
 	/* these fields only used in page-at-a-time mode and for bitmap scans */
-	int			rs_cindex;		/* current tuple's index in vistuples */
-	int			rs_ntuples;		/* number of visible tuples on page */
+	uint32		rs_cindex;		/* current tuple's index in vistuples */
+	uint32		rs_ntuples;		/* number of visible tuples on page */
 	OffsetNumber rs_vistuples[MaxHeapTuplesPerPage];	/* their offsets */
 }			HeapScanDescData;
 typedef struct HeapScanDescData *HeapScanDesc;
+
+typedef struct BitmapHeapScanDescData
+{
+	HeapScanDescData rs_heap_base;
+
+	/* Holds no data */
+}			BitmapHeapScanDescData;
+typedef struct BitmapHeapScanDescData *BitmapHeapScanDesc;
 
 /*
  * Descriptor for fetches from heap via an index.
@@ -338,7 +336,8 @@ extern TM_Result heap_lock_tuple(Relation relation, HeapTuple tuple,
 								 Buffer *buffer, struct TM_FailureData *tmfd);
 
 extern bool heap_inplace_lock(Relation relation,
-							  HeapTuple oldtup_ptr, Buffer buffer);
+							  HeapTuple oldtup_ptr, Buffer buffer,
+							  void (*release_callback) (void *), void *arg);
 extern void heap_inplace_update_and_unlock(Relation relation,
 										   HeapTuple oldtup, HeapTuple tuple,
 										   Buffer buffer);
