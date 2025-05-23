@@ -114,6 +114,10 @@ typedef struct JsonPathExecContext
 	bool		throwErrors;	/* with "false" all suppressible errors are
 								 * suppressed */
 	bool		useTz;
+	bool		useVolatile;	/* indicates that jsonb_path_*_volatile family is used.
+								 * mainly used from string method.
+								 * In fact this could be a generalization of the useTz field above,
+								 * but fttb we want to avoid extensive refactoring */
 } JsonPathExecContext;
 
 /* Context for LIKE_REGEX execution. */
@@ -301,6 +305,8 @@ static JsonPathExecResult executeNumericItemMethod(JsonPathExecContext *cxt,
 												   JsonValueList *found);
 static JsonPathExecResult executeDateTimeMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
 												JsonbValue *jb, JsonValueList *found);
+static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
+												JsonbValue *jb, JsonValueList *found);
 static JsonPathExecResult executeKeyValueMethod(JsonPathExecContext *cxt,
 												JsonPathItem *jsp, JsonbValue *jb, JsonValueList *found);
 static JsonPathExecResult appendBoolResult(JsonPathExecContext *cxt,
@@ -433,6 +439,12 @@ jsonb_path_exists_tz(PG_FUNCTION_ARGS)
 	return jsonb_path_exists_internal(fcinfo, true);
 }
 
+Datum
+jsonb_path_exists_volatile(PG_FUNCTION_ARGS)
+{
+	return jsonb_path_exists_internal(fcinfo, false);
+}
+
 /*
  * jsonb_path_exists_opr
  *		Implementation of operator "jsonb @? jsonpath" (2-argument version of
@@ -501,6 +513,12 @@ Datum
 jsonb_path_match_tz(PG_FUNCTION_ARGS)
 {
 	return jsonb_path_match_internal(fcinfo, true);
+}
+
+Datum
+jsonb_path_match_volatile(PG_FUNCTION_ARGS)
+{
+	return jsonb_path_match_internal(fcinfo, false);
 }
 
 /*
@@ -580,6 +598,12 @@ jsonb_path_query_tz(PG_FUNCTION_ARGS)
 	return jsonb_path_query_internal(fcinfo, true);
 }
 
+Datum
+jsonb_path_query_volatile(PG_FUNCTION_ARGS)
+{
+	return jsonb_path_query_internal(fcinfo, false);
+}
+
 /*
  * jsonb_path_query_array
  *		Executes jsonpath for given jsonb document and returns result as
@@ -611,6 +635,12 @@ Datum
 jsonb_path_query_array_tz(PG_FUNCTION_ARGS)
 {
 	return jsonb_path_query_array_internal(fcinfo, true);
+}
+
+Datum
+jsonb_path_query_array_volatile(PG_FUNCTION_ARGS)
+{
+	return jsonb_path_query_array_internal(fcinfo, false);
 }
 
 /*
@@ -647,6 +677,12 @@ Datum
 jsonb_path_query_first_tz(PG_FUNCTION_ARGS)
 {
 	return jsonb_path_query_first_internal(fcinfo, true);
+}
+
+Datum
+jsonb_path_query_first_volatile(PG_FUNCTION_ARGS)
+{
+	return jsonb_path_query_first_internal(fcinfo, false);
 }
 
 /********************Execute functions for JsonPath**************************/
@@ -1658,6 +1694,23 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 				res = executeNextItem(cxt, jsp, NULL, jb, found, true);
 			}
 			break;
+
+		case jpiStrLtrimFunc:
+		case jpiStrLowerFunc:
+		case jpiStrUpperFunc:
+		case jpiStrReplaceFunc:
+		case jpiStrRtrimFunc:
+		case jpiStrBtrimFunc:
+		case jpiStrInitcapFunc:
+		case jpiStrSplitPartFunc:
+		{
+			if (unwrap && JsonbType(jb) == jbvArray)
+				return executeItemUnwrapTargetArray(cxt, jsp, jb, found, false);
+
+			return executeStringInternalMethod(cxt, jsp, jb, found);
+		}
+		break;
+
 
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", jsp->type);
@@ -2788,6 +2841,176 @@ executeDateTimeMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
 	jb->val.datetime.typid = typid;
 	jb->val.datetime.typmod = typmod;
 	jb->val.datetime.tz = tz;
+
+	return executeNextItem(cxt, jsp, &elem, jb, found, hasNext);
+}
+
+/*
+ * Implementation of .upper(), lower() et. al. methods,
+ * that forward their actual implementation to internal functions.
+ */
+static JsonPathExecResult executeStringInternalMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
+												JsonbValue *jb, JsonValueList *found) {
+	Assert(	jsp->type == jpiStrLowerFunc ||
+			jsp->type == jpiStrUpperFunc ||
+			jsp->type == jpiStrReplaceFunc ||
+			jsp->type == jpiStrLtrimFunc ||
+			jsp->type == jpiStrRtrimFunc ||
+			jsp->type == jpiStrBtrimFunc ||
+			jsp->type == jpiStrInitcapFunc ||
+			jsp->type == jpiStrSplitPartFunc);
+	JsonbValue	jbvbuf;
+	bool		hasNext;
+	JsonPathExecResult res = jperNotFound;
+	JsonPathItem elem;
+	Datum		str; /* Datum representation for the current string value. The first argument to internal functions */
+	char		*tmp = NULL;
+	char		*resStr = NULL;
+
+	if (!(jb = getScalar(jb, jbvString)))
+		RETURN_ERROR(ereport(ERROR,
+							 (errcode(ERRCODE_INVALID_ARGUMENT_FOR_SQL_JSON_DATETIME_FUNCTION),
+							  errmsg("jsonpath item method .%s() can only be applied to a string",
+									 jspOperationName(jsp->type)))));
+
+	tmp = pnstrdup(jb->val.string.val, jb->val.string.len);
+	str = CStringGetTextDatum(tmp);
+
+	/* Internal string functions that accept no arguments */
+	switch (jsp->type)
+	{
+		case jpiStrLtrimFunc:
+		case jpiStrRtrimFunc:
+		case jpiStrBtrimFunc:
+		{
+			char	   *characters_str;
+			int			characters_len;
+			PGFunction	func = NULL;
+
+			switch (jsp->type)
+			{
+				case jpiStrLtrimFunc:
+					func = ltrim1;
+					break;
+				case jpiStrRtrimFunc:
+					func = rtrim1;
+					break;
+				case jpiStrBtrimFunc:
+					func = btrim1;
+					break;
+				default: ;
+			}
+
+			if (jsp->content.arg)
+			{
+				jspGetArg(jsp, &elem);
+				if (elem.type != jpiString)
+					elog(ERROR, "invalid jsonpath item type for .%s() argument", jspOperationName(jsp->type));
+
+				characters_str = jspGetString(&elem, &characters_len);
+				resStr = TextDatumGetCString(DirectFunctionCall2Coll(func,
+					DEFAULT_COLLATION_OID, str,
+					CStringGetTextDatum(characters_str)));
+				break;
+			}
+
+			resStr = TextDatumGetCString(DirectFunctionCall2Coll(func,
+					DEFAULT_COLLATION_OID, str,
+					CStringGetTextDatum(" ")));
+			break;
+		}
+
+		case jpiStrLowerFunc:
+			resStr = TextDatumGetCString(DirectFunctionCall1Coll(lower, DEFAULT_COLLATION_OID, str));
+			break;
+		case jpiStrUpperFunc:
+			resStr = TextDatumGetCString(DirectFunctionCall1Coll(upper, DEFAULT_COLLATION_OID, str));
+			break;
+		case jpiStrInitcapFunc:
+			resStr = TextDatumGetCString(DirectFunctionCall1Coll(initcap, DEFAULT_COLLATION_OID, str));
+			break;
+		case jpiStrReplaceFunc:
+		{
+			char		*from_str, *to_str;
+			int			from_len, to_len;
+
+			jspGetArg0(jsp, &elem);
+			if (elem.type != jpiString)
+				elog(ERROR, "invalid jsonpath item type for .replace() from");
+
+			from_str = jspGetString(&elem, &from_len);
+
+			jspGetArg1(jsp, &elem);
+			if (elem.type != jpiString)
+				elog(ERROR, "invalid jsonpath item type for .replace() to");
+
+			to_str = jspGetString(&elem, &to_len);
+
+			resStr = TextDatumGetCString(DirectFunctionCall3Coll(replace_text,
+				C_COLLATION_OID,
+				CStringGetTextDatum(tmp),
+				CStringGetTextDatum(from_str),
+				CStringGetTextDatum(to_str)));
+			break;
+		}
+		case jpiStrSplitPartFunc:
+		{
+			char		*from_str;
+			Numeric		n;
+			int			from_len;
+
+			jspGetArg0(jsp, &elem);
+			if (elem.type != jpiString)
+				elog(ERROR, "invalid jsonpath item type for .split_part()");
+
+			from_str = jspGetString(&elem, &from_len);
+
+			jspGetArg1(jsp, &elem);
+			if (elem.type != jpiNumeric)
+				elog(ERROR, "invalid jsonpath item type for .split_part()");
+
+			n = jspGetNumeric(&elem);
+
+			resStr = TextDatumGetCString(DirectFunctionCall3Coll(split_part,
+				C_COLLATION_OID,
+				CStringGetTextDatum(tmp),
+				CStringGetTextDatum(from_str),
+				DirectFunctionCall1(numeric_int8, NumericGetDatum(n))));
+			break;
+		}
+		default:
+			elog(ERROR, "unsupported jsonpath item type: %d", jsp->type);
+	}
+
+	if (resStr)
+		res = jperOk;
+
+	hasNext = jspGetNext(jsp, &elem);
+
+	if (!hasNext && !found)
+		return res;
+
+	jb = hasNext ? &jbvbuf : palloc(sizeof(*jb));
+
+	/* Create the appropriate jb value to return */
+	switch (jsp->type)
+	{
+		/* Cases for functions that return text */
+		case jpiStrLowerFunc:
+		case jpiStrUpperFunc:
+		case jpiStrReplaceFunc:
+		case jpiStrLtrimFunc:
+		case jpiStrRtrimFunc:
+		case jpiStrBtrimFunc:
+		case jpiStrInitcapFunc:
+		case jpiStrSplitPartFunc:
+			jb->type = jbvString;
+			jb->val.string.val = resStr;
+			jb->val.string.len = strlen(jb->val.string.val);
+		default:
+			;
+			/* cant' happen */
+	}
 
 	return executeNextItem(cxt, jsp, &elem, jb, found, hasNext);
 }

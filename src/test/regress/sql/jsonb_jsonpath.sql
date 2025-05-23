@@ -1147,3 +1147,16 @@ SELECT
 	jsonb_path_query_first(s1.j, '$.s > $s', vars => s2.j) gt
 FROM str s1, str s2
 ORDER BY s1.num, s2.num;
+
+
+-- string processing methods
+
+-- first make sure that certain methods are only available in
+-- the jsonb_path_*_volatile version
+-- in non-volatile version they should error-out
+
+select jsonb_path_query('"2023-08-15 12:34:56 +05:30"', '$.date()');
+select jsonb_path_query('" hELlo "', '$.btrim()');
+
+-- Test string methods play nicely together
+select jsonb_path_query_volatile('"   hElLo WorlD "', '$.ltrim().rtrim().initcap().btrim().lower().upper().lower().replace("hello","bye") starts with "bye"');

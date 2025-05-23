@@ -608,6 +608,46 @@ STRICT STABLE PARALLEL SAFE
 AS 'jsonb_path_query_first_tz';
 
 CREATE OR REPLACE FUNCTION
+    jsonb_path_exists_volatile(target jsonb, path jsonpath, vars jsonb DEFAULT '{}',
+                         silent boolean DEFAULT false)
+    RETURNS boolean
+    LANGUAGE INTERNAL
+    STRICT STABLE PARALLEL SAFE
+AS 'jsonb_path_exists_volatile';
+
+CREATE OR REPLACE FUNCTION
+    jsonb_path_match_volatile(target jsonb, path jsonpath, vars jsonb DEFAULT '{}',
+                        silent boolean DEFAULT false)
+    RETURNS boolean
+    LANGUAGE INTERNAL
+    STRICT STABLE PARALLEL SAFE
+AS 'jsonb_path_match_volatile';
+
+CREATE OR REPLACE FUNCTION
+    jsonb_path_query_volatile(target jsonb, path jsonpath, vars jsonb DEFAULT '{}',
+                        silent boolean DEFAULT false)
+    RETURNS SETOF jsonb
+    LANGUAGE INTERNAL
+    STRICT STABLE PARALLEL SAFE
+AS 'jsonb_path_query_volatile';
+
+CREATE OR REPLACE FUNCTION
+    jsonb_path_query_array_volatile(target jsonb, path jsonpath, vars jsonb DEFAULT '{}',
+                              silent boolean DEFAULT false)
+    RETURNS jsonb
+    LANGUAGE INTERNAL
+    STRICT STABLE PARALLEL SAFE
+AS 'jsonb_path_query_array_volatile';
+
+CREATE OR REPLACE FUNCTION
+    jsonb_path_query_first_volatile(target jsonb, path jsonpath, vars jsonb DEFAULT '{}',
+                              silent boolean DEFAULT false)
+    RETURNS jsonb
+    LANGUAGE INTERNAL
+    STRICT STABLE PARALLEL SAFE
+AS 'jsonb_path_query_first_volatile';
+
+CREATE OR REPLACE FUNCTION
   jsonb_strip_nulls(target jsonb, strip_in_arrays boolean DEFAULT false)
 RETURNS jsonb
 LANGUAGE INTERNAL
