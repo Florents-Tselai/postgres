@@ -37,6 +37,9 @@
 # been the custom to insert new entries adjacent to related older entries.
 # Try to do one or the other though, don't just insert entries at random.
 
+# To find unused OIDs see src/include/catalog/unused_oids.
+# If multiple related OIDs are added, it is suggested they're contiguous.
+
 # OIDS 1 - 99
 
 { oid => '1242', descr => 'I/O',
