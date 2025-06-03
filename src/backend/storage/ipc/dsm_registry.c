@@ -26,15 +26,13 @@
 
 #include "postgres.h"
 
+#include "funcapi.h"
 #include "lib/dshash.h"
 #include "storage/dsm_registry.h"
 #include "storage/lwlock.h"
 #include "storage/shmem.h"
-#include "utils/memutils.h"
-#include "fmgr.h"
-#include "funcapi.h"
-#include "miscadmin.h"
 #include "utils/builtins.h"
+#include "utils/memutils.h"
 
 typedef struct DSMRegistryCtxStruct
 {
@@ -203,21 +201,12 @@ GetNamedDSMSegment(const char *name, size_t size,
 	return ret;
 }
 
-typedef struct
-{
-	Tuplestorestate *tupstore;
-	TupleDesc        tupdesc;
-} DSMRegistrySRFContext;
-
 Datum
 pg_get_dsm_registry_allocations(PG_FUNCTION_ARGS)
 {
 	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
 	DSMRegistryEntry *entry;
 	dshash_seq_status status;
-
-	if (rsinfo == NULL || !IsA(rsinfo, ReturnSetInfo))
-		ereport(ERROR, (errmsg("pg_get_dsm_registry_allocations must be used in a SRF context")));
 
 	InitMaterializedSRF(fcinfo, MAT_SRF_USE_EXPECTED_DESC);
 

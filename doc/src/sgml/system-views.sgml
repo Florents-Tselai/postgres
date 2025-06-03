@@ -187,6 +187,11 @@
      </row>
 
      <row>
+      <entry><link linkend="view-pg-dsm-registry-allocations"><structname>pg_dsm_registry_allocations</structname></link></entry>
+      <entry>DSM segment allocations registered via the DSM registry</entry>
+     </row>
+
+     <row>
       <entry><link linkend="view-pg-stats"><structname>pg_stats</structname></link></entry>
       <entry>planner statistics</entry>
      </row>
