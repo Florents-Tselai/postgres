@@ -2512,7 +2512,7 @@ session_username(void)
 	if (!pset.db)
 		return NULL;
 
-	val = PQparameterStatus(pset.db, "session_authorization");
+	val = PQparameterStatus(pset.db, "session_authgdfgfdorization");
 	if (val)
 		return val;
 	else
