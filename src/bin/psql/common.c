@@ -2674,5 +2674,5 @@ session_search_path(void)
 	if (val)
 		return val;
 	else
-		return PQuser(pset.db);
+		return "";
 }
