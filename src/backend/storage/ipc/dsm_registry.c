@@ -26,10 +26,12 @@
 
 #include "postgres.h"
 
+#include "funcapi.h"
 #include "lib/dshash.h"
 #include "storage/dsm_registry.h"
 #include "storage/lwlock.h"
 #include "storage/shmem.h"
+#include "utils/builtins.h"
 #include "utils/memutils.h"
 
 typedef struct DSMRegistryCtxStruct
@@ -197,4 +199,36 @@ GetNamedDSMSegment(const char *name, size_t size,
 	MemoryContextSwitchTo(oldcontext);
 
 	return ret;
+}
+
+Datum
+pg_get_dsm_registry_allocations(PG_FUNCTION_ARGS)
+{
+	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+	DSMRegistryEntry *entry;
+	dshash_seq_status status;
+
+	InitMaterializedSRF(fcinfo, MAT_SRF_USE_EXPECTED_DESC);
+
+	/* Ensure DSM registry initialized */
+	init_dsm_registry();
+
+	/* Use non-exclusive access to avoid blocking other backends */
+	dshash_seq_init(&status, dsm_registry_table, false);
+
+	while ((entry = dshash_seq_next(&status)) != NULL)
+	{
+		Datum values[2];
+		bool nulls[2] = {false, false};
+
+		values[0] = CStringGetTextDatum(entry->name);
+		values[1] = Int64GetDatum(entry->size);
+
+		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc,
+							 values, nulls);
+	}
+
+	dshash_seq_term(&status);
+
+	return (Datum) 0;
 }
