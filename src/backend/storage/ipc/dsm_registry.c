@@ -435,3 +435,35 @@ GetNamedDSHash(const char *name, const dshash_parameters *params, bool *found)
 
 	return ret;
 }
+
+Datum
+pg_get_dsm_registry_allocations(PG_FUNCTION_ARGS)
+{
+	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+	DSMRegistryEntry *entry;
+	dshash_seq_status status;
+
+	InitMaterializedSRF(fcinfo, MAT_SRF_USE_EXPECTED_DESC);
+
+	/* Ensure DSM registry initialized */
+	init_dsm_registry();
+
+	/* Use non-exclusive access to avoid blocking other backends */
+	dshash_seq_init(&status, dsm_registry_table, false);
+
+	while ((entry = dshash_seq_next(&status)) != NULL)
+	{
+		Datum values[2];
+		bool nulls[2] = {false, false};
+
+		values[0] = CStringGetTextDatum(entry->name);
+		values[1] = Int64GetDatum(entry->size);
+
+		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc,
+							 values, nulls);
+	}
+
+	dshash_seq_term(&status);
+
+	return (Datum) 0;
+}

@@ -6,9 +6,9 @@ SELECT set_val_in_shmem(1236);
 (1 row)
 
 SELECT set_val_in_hash('test', '1414');
- set_val_in_hash 
+ set_val_in_hash
 -----------------
- 
+
 (1 row)
 
 \c
@@ -19,8 +19,14 @@ SELECT get_val_in_shmem();
 (1 row)
 
 SELECT get_val_in_hash('test');
- get_val_in_hash 
+ get_val_in_hash
 -----------------
  1414
+(1 row)
+
+SELECT size > 0 FROM pg_dsm_registry_allocations WHERE name = 'test_dsm_registry';
+ ?column?
+----------
+ t
 (1 row)
 
