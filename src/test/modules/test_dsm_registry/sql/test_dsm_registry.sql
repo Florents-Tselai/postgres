@@ -4,3 +4,5 @@ SELECT set_val_in_hash('test', '1414');
 \c
 SELECT get_val_in_shmem();
 SELECT get_val_in_hash('test');
+\c
+SELECT name, type, size > 0 OR size ISNULL as size FROM pg_dsm_registry_allocations WHERE name like 'test_dsm_registry%';

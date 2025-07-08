@@ -24,3 +24,12 @@ SELECT get_val_in_hash('test');
  1414
 (1 row)
 
+\c
+SELECT name, type, size > 0 OR size ISNULL as size FROM pg_dsm_registry_allocations WHERE name like 'test_dsm_registry%';
+          name          | type | size 
+------------------------+------+------
+ test_dsm_registry_dsa  | dsa  | t
+ test_dsm_registry_hash | dsh  | t
+ test_dsm_registry_dsm  | dsm  | t
+(3 rows)
+

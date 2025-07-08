@@ -40,10 +40,12 @@
 
 #include "postgres.h"
 
+#include "funcapi.h"
 #include "lib/dshash.h"
 #include "storage/dsm_registry.h"
 #include "storage/lwlock.h"
 #include "storage/shmem.h"
+#include "utils/builtins.h"
 #include "utils/memutils.h"
 
 #define DSMR_NAME_LEN				128
@@ -434,4 +436,68 @@ GetNamedDSHash(const char *name, const dshash_parameters *params, bool *found)
 	MemoryContextSwitchTo(oldcontext);
 
 	return ret;
+}
+
+Datum
+pg_get_dsm_registry_allocations(PG_FUNCTION_ARGS)
+{
+	ReturnSetInfo *rsinfo = (ReturnSetInfo *) fcinfo->resultinfo;
+	DSMRegistryEntry *entry;
+	dshash_seq_status status;
+
+	InitMaterializedSRF(fcinfo, MAT_SRF_USE_EXPECTED_DESC);
+
+	/* Ensure DSM registry initialized */
+	init_dsm_registry();
+
+	/* Use non-exclusive access to avoid blocking other backends */
+	dshash_seq_init(&status, dsm_registry_table, false);
+
+	while ((entry = dshash_seq_next(&status)) != NULL)
+	{
+		/* name, type, size */
+		Datum values[3];
+		bool nulls[3] = {false, false, false};
+
+		/* 0: name */
+		values[0] = CStringGetTextDatum(entry->name);
+
+		/* 1: type */
+		switch (entry->type) {
+			case DSMR_ENTRY_TYPE_DSM:
+				values[1] = CStringGetTextDatum("dsm");
+				break;
+			case DSMR_ENTRY_TYPE_DSA:
+				values[1] = CStringGetTextDatum("dsa");
+				break;
+			case DSMR_ENTRY_TYPE_DSH:
+				values[1] = CStringGetTextDatum("dsh");
+				break;
+			default:
+				values[1] = CStringGetTextDatum("unknown");
+				break;
+		}
+
+		/* 2: size */
+		switch (entry->type)
+		{
+			case DSMR_ENTRY_TYPE_DSM:
+				values[2] = Int64GetDatum(entry->data.dsm.size);
+				break;
+
+			/* in case of dsa or dsh we return NULL */
+			case DSMR_ENTRY_TYPE_DSA:
+			case DSMR_ENTRY_TYPE_DSH:
+			default:
+				nulls[2] = true;
+				break;
+		}
+
+		tuplestore_putvalues(rsinfo->setResult, rsinfo->setDesc,
+							 values, nulls);
+	}
+
+	dshash_seq_term(&status);
+
+	return (Datum) 0;
 }
