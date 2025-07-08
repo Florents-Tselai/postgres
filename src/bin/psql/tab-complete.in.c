@@ -889,6 +889,14 @@ static const SchemaQuery Query_for_list_of_analyzables = {
 	.result = "c.relname",
 };
 
+/*
+ * Relations supporting COPY TO/FROM are currently almost the same as
+ * those supporting ANALYZE. Although views with INSTEAD OF INSERT triggers
+ * can be used with COPY FROM, they are rarely used for this purpose,
+ * so plain views are intentionally excluded from this tab completion.
+ */
+#define Query_for_list_of_tables_for_copy Query_for_list_of_analyzables
+
 /* Relations supporting index creation */
 static const SchemaQuery Query_for_list_of_indexables = {
 	.catname = "pg_catalog.pg_class c",
@@ -1875,7 +1883,7 @@ psql_completion(const char *text, int start, int end)
 	static const char *const backslash_commands[] = {
 		"\\a",
 		"\\bind", "\\bind_named",
-		"\\connect", "\\conninfo", "\\C", "\\cd", "\\close", "\\copy",
+		"\\connect", "\\conninfo", "\\C", "\\cd", "\\close_prepared", "\\copy",
 		"\\copyright", "\\crosstabview",
 		"\\d", "\\da", "\\dA", "\\dAc", "\\dAf", "\\dAo", "\\dAp",
 		"\\db", "\\dc", "\\dconfig", "\\dC", "\\dd", "\\ddp", "\\dD",
@@ -2725,17 +2733,24 @@ match_previous_words(int pattern_id,
 	/* ALTER TABLE xxx ADD */
 	else if (Matches("ALTER", "TABLE", MatchAny, "ADD"))
 	{
-		/* make sure to keep this list and the !Matches() below in sync */
-		COMPLETE_WITH("COLUMN", "CONSTRAINT", "CHECK", "UNIQUE", "PRIMARY KEY",
-					  "EXCLUDE", "FOREIGN KEY");
+		/*
+		 * make sure to keep this list and the MatchAnyExcept() below in sync
+		 */
+		COMPLETE_WITH("COLUMN", "CONSTRAINT", "CHECK (", "NOT NULL", "UNIQUE",
+					  "PRIMARY KEY", "EXCLUDE", "FOREIGN KEY");
 	}
 	/* ALTER TABLE xxx ADD [COLUMN] yyy */
 	else if (Matches("ALTER", "TABLE", MatchAny, "ADD", "COLUMN", MatchAny) ||
-			 Matches("ALTER", "TABLE", MatchAny, "ADD", MatchAnyExcept("COLUMN|CONSTRAINT|CHECK|UNIQUE|PRIMARY|EXCLUDE|FOREIGN")))
+			 Matches("ALTER", "TABLE", MatchAny, "ADD", MatchAnyExcept("COLUMN|CONSTRAINT|CHECK|UNIQUE|PRIMARY|NOT|EXCLUDE|FOREIGN")))
 		COMPLETE_WITH_SCHEMA_QUERY(Query_for_list_of_datatypes);
 	/* ALTER TABLE xxx ADD CONSTRAINT yyy */
 	else if (Matches("ALTER", "TABLE", MatchAny, "ADD", "CONSTRAINT", MatchAny))
-		COMPLETE_WITH("CHECK", "UNIQUE", "PRIMARY KEY", "EXCLUDE", "FOREIGN KEY");
+		COMPLETE_WITH("CHECK (", "NOT NULL", "UNIQUE", "PRIMARY KEY", "EXCLUDE", "FOREIGN KEY");
+	/* ALTER TABLE xxx ADD NOT NULL */
+	else if (Matches("ALTER", "TABLE", MatchAny, "ADD", "NOT", "NULL"))
+		COMPLETE_WITH_ATTR(prev4_wd);
+	else if (Matches("ALTER", "TABLE", MatchAny, "ADD", "CONSTRAINT", MatchAny, "NOT", "NULL"))
+		COMPLETE_WITH_ATTR(prev6_wd);
 	/* ALTER TABLE xxx ADD [CONSTRAINT yyy] (PRIMARY KEY|UNIQUE) */
 	else if (Matches("ALTER", "TABLE", MatchAny, "ADD", "PRIMARY", "KEY") ||
 			 Matches("ALTER", "TABLE", MatchAny, "ADD", "UNIQUE") ||
@@ -3255,7 +3270,7 @@ match_previous_words(int pattern_id,
 	 * backslash command).
 	 */
 	else if (Matches("COPY|\\copy"))
-		COMPLETE_WITH_SCHEMA_QUERY_PLUS(Query_for_list_of_tables, "(");
+		COMPLETE_WITH_SCHEMA_QUERY_PLUS(Query_for_list_of_tables_for_copy, "(");
 	/* Complete COPY ( with legal query commands */
 	else if (Matches("COPY|\\copy", "("))
 		COMPLETE_WITH("SELECT", "TABLE", "VALUES", "INSERT INTO", "UPDATE", "DELETE FROM", "MERGE INTO", "WITH");
@@ -3289,7 +3304,7 @@ match_previous_words(int pattern_id,
 		COMPLETE_WITH("FORMAT", "FREEZE", "DELIMITER", "NULL",
 					  "HEADER", "QUOTE", "ESCAPE", "FORCE_QUOTE",
 					  "FORCE_NOT_NULL", "FORCE_NULL", "ENCODING", "DEFAULT",
-					  "ON_ERROR", "LOG_VERBOSITY");
+					  "ON_ERROR", "LOG_VERBOSITY", "REJECT_LIMIT");
 
 	/* Complete COPY <sth> FROM|TO filename WITH (FORMAT */
 	else if (Matches("COPY|\\copy", MatchAny, "FROM|TO", MatchAny, "WITH", "(", "FORMAT"))
@@ -3664,9 +3679,10 @@ match_previous_words(int pattern_id,
 			 TailMatches("CREATE", "TEMP|TEMPORARY|UNLOGGED", "TABLE", MatchAny, "(*)", "AS"))
 		COMPLETE_WITH("EXECUTE", "SELECT", "TABLE", "VALUES", "WITH");
 	/* Complete CREATE TABLE name (...) with supported options */
-	else if (TailMatches("CREATE", "TABLE", MatchAny, "(*)") ||
-			 TailMatches("CREATE", "UNLOGGED", "TABLE", MatchAny, "(*)"))
+	else if (TailMatches("CREATE", "TABLE", MatchAny, "(*)"))
 		COMPLETE_WITH("AS", "INHERITS (", "PARTITION BY", "USING", "TABLESPACE", "WITH (");
+	else if (TailMatches("CREATE", "UNLOGGED", "TABLE", MatchAny, "(*)"))
+		COMPLETE_WITH("AS", "INHERITS (", "USING", "TABLESPACE", "WITH (");
 	else if (TailMatches("CREATE", "TEMP|TEMPORARY", "TABLE", MatchAny, "(*)"))
 		COMPLETE_WITH("AS", "INHERITS (", "ON COMMIT", "PARTITION BY", "USING",
 					  "TABLESPACE", "WITH (");

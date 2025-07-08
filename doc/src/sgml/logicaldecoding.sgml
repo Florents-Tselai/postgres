@@ -57,14 +57,14 @@
 postgres=# -- Create a slot named 'regression_slot' using the output plugin 'test_decoding'
 postgres=# SELECT * FROM pg_create_logical_replication_slot('regression_slot', 'test_decoding', false, true);
     slot_name    |    lsn
------------------+-----------
- regression_slot | 0/16B1970
+-----------------+------------
+ regression_slot | 0/016B1970
 (1 row)
 
 postgres=# SELECT slot_name, plugin, slot_type, database, active, restart_lsn, confirmed_flush_lsn FROM pg_replication_slots;
     slot_name    |    plugin     | slot_type | database | active | restart_lsn | confirmed_flush_lsn
------------------+---------------+-----------+----------+--------+-------------+-----------------
- regression_slot | test_decoding | logical   | postgres | f      | 0/16A4408   | 0/16A4440
+-----------------+---------------+-----------+----------+--------+-------------+---------------------
+ regression_slot | test_decoding | logical   | postgres | f      | 0/016A4408  | 0/016A4440
 (1 row)
 
 postgres=# -- There are no changes to see yet
@@ -78,10 +78,10 @@ CREATE TABLE
 
 postgres=# -- DDL isn't replicated, so all you'll see is the transaction
 postgres=# SELECT * FROM pg_logical_slot_get_changes('regression_slot', NULL, NULL);
-    lsn    |  xid  |     data
------------+-------+--------------
- 0/BA2DA58 | 10297 | BEGIN 10297
- 0/BA5A5A0 | 10297 | COMMIT 10297
+    lsn     |  xid  |     data
+------------+-------+--------------
+ 0/0BA2DA58 | 10297 | BEGIN 10297
+ 0/0BA5A5A0 | 10297 | COMMIT 10297
 (2 rows)
 
 postgres=# -- Once changes are read, they're consumed and not emitted
@@ -97,41 +97,41 @@ postgres=*# INSERT INTO data(data) VALUES('2');
 postgres=*# COMMIT;
 
 postgres=# SELECT * FROM pg_logical_slot_get_changes('regression_slot', NULL, NULL);
-    lsn    |  xid  |                          data
------------+-------+---------------------------------------------------------
- 0/BA5A688 | 10298 | BEGIN 10298
- 0/BA5A6F0 | 10298 | table public.data: INSERT: id[integer]:1 data[text]:'1'
- 0/BA5A7F8 | 10298 | table public.data: INSERT: id[integer]:2 data[text]:'2'
- 0/BA5A8A8 | 10298 | COMMIT 10298
+    lsn     |  xid  |                          data
+------------+-------+---------------------------------------------------------
+ 0/0BA5A688 | 10298 | BEGIN 10298
+ 0/0BA5A6F0 | 10298 | table public.data: INSERT: id[integer]:1 data[text]:'1'
+ 0/0BA5A7F8 | 10298 | table public.data: INSERT: id[integer]:2 data[text]:'2'
+ 0/0BA5A8A8 | 10298 | COMMIT 10298
 (4 rows)
 
 postgres=# INSERT INTO data(data) VALUES('3');
 
 postgres=# -- You can also peek ahead in the change stream without consuming changes
 postgres=# SELECT * FROM pg_logical_slot_peek_changes('regression_slot', NULL, NULL);
-    lsn    |  xid  |                          data
------------+-------+---------------------------------------------------------
- 0/BA5A8E0 | 10299 | BEGIN 10299
- 0/BA5A8E0 | 10299 | table public.data: INSERT: id[integer]:3 data[text]:'3'
- 0/BA5A990 | 10299 | COMMIT 10299
+    lsn     |  xid  |                          data
+------------+-------+---------------------------------------------------------
+ 0/0BA5A8E0 | 10299 | BEGIN 10299
+ 0/0BA5A8E0 | 10299 | table public.data: INSERT: id[integer]:3 data[text]:'3'
+ 0/0BA5A990 | 10299 | COMMIT 10299
 (3 rows)
 
 postgres=# -- The next call to pg_logical_slot_peek_changes() returns the same changes again
 postgres=# SELECT * FROM pg_logical_slot_peek_changes('regression_slot', NULL, NULL);
-    lsn    |  xid  |                          data
------------+-------+---------------------------------------------------------
- 0/BA5A8E0 | 10299 | BEGIN 10299
- 0/BA5A8E0 | 10299 | table public.data: INSERT: id[integer]:3 data[text]:'3'
- 0/BA5A990 | 10299 | COMMIT 10299
+    lsn     |  xid  |                          data
+------------+-------+---------------------------------------------------------
+ 0/0BA5A8E0 | 10299 | BEGIN 10299
+ 0/0BA5A8E0 | 10299 | table public.data: INSERT: id[integer]:3 data[text]:'3'
+ 0/0BA5A990 | 10299 | COMMIT 10299
 (3 rows)
 
 postgres=# -- options can be passed to output plugin, to influence the formatting
 postgres=# SELECT * FROM pg_logical_slot_peek_changes('regression_slot', NULL, NULL, 'include-timestamp', 'on');
-    lsn    |  xid  |                          data
------------+-------+---------------------------------------------------------
- 0/BA5A8E0 | 10299 | BEGIN 10299
- 0/BA5A8E0 | 10299 | table public.data: INSERT: id[integer]:3 data[text]:'3'
- 0/BA5A990 | 10299 | COMMIT 10299 (at 2017-05-10 12:07:21.272494-04)
+    lsn     |  xid  |                          data
+------------+-------+---------------------------------------------------------
+ 0/0BA5A8E0 | 10299 | BEGIN 10299
+ 0/0BA5A8E0 | 10299 | table public.data: INSERT: id[integer]:3 data[text]:'3'
+ 0/0BA5A990 | 10299 | COMMIT 10299 (at 2017-05-10 12:07:21.272494-04)
 (3 rows)
 
 postgres=# -- Remember to destroy a slot you no longer need to stop it consuming
@@ -169,7 +169,7 @@ COMMIT 693
 $ pg_recvlogical -d postgres --slot=test --drop-slot
 
 Example 2:
-$ pg_recvlogical -d postgres --slot=test --create-slot --two-phase
+$ pg_recvlogical -d postgres --slot=test --create-slot --enable-two-phase
 $ pg_recvlogical -d postgres --slot=test --start -f -
 <keycombo action="simul"><keycap>Control</keycap><keycap>Z</keycap></keycombo>
 $ psql -d postgres -c "BEGIN;INSERT INTO data(data) VALUES('5');PREPARE TRANSACTION 'test';"
@@ -200,18 +200,18 @@ postgres=*# INSERT INTO data(data) VALUES('5');
 postgres=*# PREPARE TRANSACTION 'test_prepared1';
 
 postgres=# SELECT * FROM pg_logical_slot_get_changes('regression_slot', NULL, NULL);
-    lsn    | xid |                          data
------------+-----+---------------------------------------------------------
- 0/1689DC0 | 529 | BEGIN 529
- 0/1689DC0 | 529 | table public.data: INSERT: id[integer]:3 data[text]:'5'
- 0/1689FC0 | 529 | PREPARE TRANSACTION 'test_prepared1', txid 529
+    lsn     | xid |                          data
+------------+-----+---------------------------------------------------------
+ 0/01689DC0 | 529 | BEGIN 529
+ 0/01689DC0 | 529 | table public.data: INSERT: id[integer]:3 data[text]:'5'
+ 0/01689FC0 | 529 | PREPARE TRANSACTION 'test_prepared1', txid 529
 (3 rows)
 
 postgres=# COMMIT PREPARED 'test_prepared1';
 postgres=# select * from pg_logical_slot_get_changes('regression_slot', NULL, NULL);
-    lsn    | xid |                    data
------------+-----+--------------------------------------------
- 0/168A060 | 529 | COMMIT PREPARED 'test_prepared1', txid 529
+    lsn     | xid |                    data
+------------+-----+--------------------------------------------
+ 0/0168A060 | 529 | COMMIT PREPARED 'test_prepared1', txid 529
 (4 row)
 
 postgres=#-- you can also rollback a prepared transaction
@@ -219,18 +219,18 @@ postgres=# BEGIN;
 postgres=*# INSERT INTO data(data) VALUES('6');
 postgres=*# PREPARE TRANSACTION 'test_prepared2';
 postgres=# select * from pg_logical_slot_get_changes('regression_slot', NULL, NULL);
-    lsn    | xid |                          data
------------+-----+---------------------------------------------------------
- 0/168A180 | 530 | BEGIN 530
- 0/168A1E8 | 530 | table public.data: INSERT: id[integer]:4 data[text]:'6'
- 0/168A430 | 530 | PREPARE TRANSACTION 'test_prepared2', txid 530
+    lsn     | xid |                          data
+------------+-----+---------------------------------------------------------
+ 0/0168A180 | 530 | BEGIN 530
+ 0/0168A1E8 | 530 | table public.data: INSERT: id[integer]:4 data[text]:'6'
+ 0/0168A430 | 530 | PREPARE TRANSACTION 'test_prepared2', txid 530
 (3 rows)
 
 postgres=# ROLLBACK PREPARED 'test_prepared2';
 postgres=# select * from pg_logical_slot_get_changes('regression_slot', NULL, NULL);
-    lsn    | xid |                     data
------------+-----+----------------------------------------------
- 0/168A4B8 | 530 | ROLLBACK PREPARED 'test_prepared2', txid 530
+    lsn     | xid |                     data
+------------+-----+----------------------------------------------
+ 0/0168A4B8 | 530 | ROLLBACK PREPARED 'test_prepared2', txid 530
 (1 row)
 </programlisting>
 </sect1>
@@ -370,10 +370,10 @@ postgres=# select * from pg_logical_slot_get_changes('regression_slot', NULL, NU
      <function>pg_create_logical_replication_slot</function></link>, or by
      using the <link linkend="sql-createsubscription-params-with-failover">
      <literal>failover</literal></link> option of
-     <command>CREATE SUBSCRIPTION</command> during slot creation, and then calling
-     <link linkend="pg-sync-replication-slots">
-     <function>pg_sync_replication_slots</function></link>
-     on the standby. By setting <link linkend="guc-sync-replication-slots">
+     <command>CREATE SUBSCRIPTION</command> during slot creation.
+     Additionally, enabling <link linkend="guc-sync-replication-slots">
+     <varname>sync_replication_slots</varname></link> on the standby
+     is required. By enabling <link linkend="guc-sync-replication-slots">
      <varname>sync_replication_slots</varname></link>
      on the standby, the failover slots can be synchronized periodically in
      the slotsync worker. For the synchronization to work, it is mandatory to
@@ -396,6 +396,52 @@ postgres=# select * from pg_logical_slot_get_changes('regression_slot', NULL, NU
      standbys, associated with the physical replication slots specified
      in <varname>synchronized_standby_slots</varname>, have confirmed
      receiving the WAL up to the latest flushed position on the primary server.
+    </para>
+
+    <note>
+     <para>
+      While enabling <link linkend="guc-sync-replication-slots">
+      <varname>sync_replication_slots</varname></link> allows for automatic
+      periodic synchronization of failover slots, they can also be manually
+      synchronized using the <link linkend="pg-sync-replication-slots">
+      <function>pg_sync_replication_slots</function></link> function on the standby.
+      However, this function is primarily intended for testing and debugging and
+      should be used with caution. Unlike automatic synchronization, it does not
+      include cyclic retries, making it more prone to synchronization failures,
+      particularly during initial sync scenarios where the required WAL files
+      or catalog rows for the slot may have already been removed or are at risk
+      of being removed on the standby. In contrast, automatic synchronization
+      via <varname>sync_replication_slots</varname> provides continuous slot
+      updates, enabling seamless failover and supporting high availability.
+      Therefore, it is the recommended method for synchronizing slots.
+     </para>
+    </note>
+
+    <para>
+     When slot synchronization is configured as recommended,
+     and the initial synchronization is performed either automatically or
+     manually via pg_sync_replication_slot, the standby can persist the
+     synchronized slot only if the following condition is met: The logical
+     replication slot on the primary must retain WALs and system catalog
+     rows that are still available on the standby. This ensures data
+     integrity and allows logical replication to continue smoothly after
+     promotion.
+     If the required WALs or catalog rows have already been purged from the
+     standby, the slot will not be persisted to avoid data loss. In such
+     cases, the following log message may appear:
+<programlisting>
+     LOG:  could not synchronize replication slot "failover_slot"
+     DETAIL:  Synchronization could lead to data loss as the remote slot needs WAL at LSN 0/03003F28 and catalog xmin 754, but the standby has LSN 0/03003F28 and catalog xmin 756
+</programlisting>
+     If the logical replication slot is actively used by a consumer, no
+     manual intervention is needed; the slot will advance automatically,
+     and synchronization will resume in the next cycle. However, if no
+     consumer is configured, it is advisable to manually advance the slot
+     on the primary using <link linkend="pg-logical-slot-get-changes">
+     <function>pg_logical_slot_get_changes</function></link> or
+     <link linkend="pg-logical-slot-get-binary-changes">
+     <function>pg_logical_slot_get_binary_changes</function></link>,
+     allowing synchronization to proceed.
     </para>
 
     <para>
@@ -1366,7 +1412,7 @@ commit_prepared_cb(...);  &lt;-- commit of the prepared transaction
     currently used for decoded changes) is selected and streamed.  However, in
     some cases we still have to spill to disk even if streaming is enabled
     because we exceed the memory threshold but still have not decoded the
-    complete tuple e.g., only decoded toast table insert but not the main table
+    complete tuple e.g., only decoded TOAST table insert but not the main table
     insert.
    </para>
 

@@ -2363,7 +2363,7 @@ include_dir 'conf.d'
       </listitem>
      </varlistentry>
 
-     <varlistentry id="guc_file_copy_method" xreflabel="file_copy_method">
+     <varlistentry id="guc-file-copy-method" xreflabel="file_copy_method">
       <term><varname>file_copy_method</varname> (<type>enum</type>)
       <indexterm>
        <primary><varname>file_copy_method</varname> configuration parameter</primary>
@@ -2779,6 +2779,7 @@ include_dir 'conf.d'
            </para>
           </listitem>
          </itemizedlist>
+         The default is <literal>worker</literal>.
         </para>
         <para>
          This parameter can only be set at server start.
@@ -2787,7 +2788,7 @@ include_dir 'conf.d'
       </varlistentry>
 
       <varlistentry id="guc-io-workers" xreflabel="io_workers">
-       <term><varname>io_workers</varname> (<type>int</type>)
+       <term><varname>io_workers</varname> (<type>integer</type>)
        <indexterm>
         <primary><varname>io_workers</varname> configuration parameter</primary>
        </indexterm>
@@ -2893,7 +2894,8 @@ include_dir 'conf.d'
          Sets the maximum number of parallel workers that can be
          started by a single utility command.  Currently, the parallel
          utility commands that support the use of parallel workers are
-         <command>CREATE INDEX</command> when building a B-tree or BRIN index,
+         <command>CREATE INDEX</command> when building a B-tree,
+         GIN, or BRIN index,
          and <command>VACUUM</command> without <literal>FULL</literal>
          option.  Parallel workers are taken from the pool of processes
          established by <xref linkend="guc-max-worker-processes"/>, limited
@@ -5764,7 +5766,7 @@ ANY <replaceable class="parameter">num_sync</replaceable> ( <replaceable class="
       </listitem>
      </varlistentry>
 
-     <varlistentry id="guc-enable_self_join_elimination" xreflabel="enable_self_join_elimination">
+     <varlistentry id="guc-enable-self-join-elimination" xreflabel="enable_self_join_elimination">
       <term><varname>enable_self_join_elimination</varname> (<type>boolean</type>)
       <indexterm>
        <primary><varname>enable_self_join_elimination</varname> configuration parameter</primary>
@@ -8600,7 +8602,8 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
         timing information is displayed in
         <link linkend="vacuum-progress-reporting"><structname>pg_stat_progress_vacuum</structname></link>,
         <link linkend="analyze-progress-reporting"><structname>pg_stat_progress_analyze</structname></link>,
-        in the output of <xref linkend="sql-vacuum"/> when the
+        in the output of <xref linkend="sql-vacuum"/> and
+        <xref linkend="sql-analyze"/> when the
         <literal>VERBOSE</literal> option is used, and by autovacuum for
         auto-vacuums and auto-analyzes when
         <xref linkend="guc-log-autovacuum-min-duration"/> is set.
@@ -9338,7 +9341,8 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
       <varlistentry id="guc-vacuum-truncate" xreflabel="vacuum_truncate">
        <term><varname>vacuum_truncate</varname> (<type>boolean</type>)
        <indexterm>
-        <primary><varname>vacuum_truncate</varname> configuration parameter</primary>
+        <primary><varname>vacuum_truncate</varname></primary>
+        <secondary>configuration parameter</secondary>
        </indexterm>
        </term>
        <listitem>
@@ -9542,7 +9546,8 @@ COPY postgres_log FROM '/full/path/to/logfile.csv' WITH csv;
      <varlistentry id="guc-vacuum-max-eager-freeze-failure-rate" xreflabel="vacuum_max_eager_freeze_failure_rate">
       <term><varname>vacuum_max_eager_freeze_failure_rate</varname> (<type>floating point</type>)
       <indexterm>
-       <primary><varname>vacuum_max_eager_freeze_failure_rate</varname> configuration parameter</primary>
+       <primary><varname>vacuum_max_eager_freeze_failure_rate</varname></primary>
+       <secondary>configuration parameter</secondary>
       </indexterm>
       </term>
       <listitem>

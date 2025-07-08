@@ -4550,11 +4550,9 @@ DropRelationBuffers(SMgrRelation smgr_reln, ForkNumber *forkNum,
 	if (RelFileLocatorBackendIsTemp(rlocator))
 	{
 		if (rlocator.backend == MyProcNumber)
-		{
-			for (j = 0; j < nforks; j++)
-				DropRelationLocalBuffers(rlocator.locator, forkNum[j],
-										 firstDelBlock[j]);
-		}
+			DropRelationLocalBuffers(rlocator.locator, forkNum, nforks,
+									 firstDelBlock);
+
 		return;
 	}
 
@@ -7320,7 +7318,7 @@ buffer_readv_report(PgAioResult result, const PgAioTargetData *td,
 				affected_count > 1 ?
 				errdetail("Block %u held first zeroed page.",
 						  first + first_off) : 0,
-				errhint("See server log for details about the other %u invalid block(s).",
+				errhint("See server log for details about the other %d invalid block(s).",
 						affected_count + checkfail_count - 1));
 		return;
 	}

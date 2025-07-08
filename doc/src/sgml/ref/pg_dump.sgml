@@ -18,7 +18,7 @@ PostgreSQL documentation
   <refname>pg_dump</refname>
 
   <refpurpose>
-   extract a <productname>PostgreSQL</productname> database into a script file or other archive file
+   export a <productname>PostgreSQL</productname> database as an SQL script or to other formats
   </refpurpose>
  </refnamediv>
 
@@ -1277,11 +1277,11 @@ PostgreSQL documentation
          </para>
          <para>
           The data section contains actual table data, large-object
-          contents, statistics for tables and materialized views and
-          sequence values.
+          contents, sequence values, and statistics for tables,
+          materialized views, and foreign tables.
           Post-data items include definitions of indexes, triggers, rules,
           statistics for indexes, and constraints other than validated check
-          constraints.
+          and not-null constraints.
           Pre-data items include all other data definition items.
          </para>
        </listitem>
@@ -1359,7 +1359,8 @@ PostgreSQL documentation
       <listitem>
        <para>
         Dump only the statistics, not the schema (data definitions) or data.
-        Statistics for tables, materialized views, and indexes are dumped.
+        Statistics for tables, materialized views, foreign tables,
+        and indexes are dumped.
        </para>
       </listitem>
      </varlistentry>

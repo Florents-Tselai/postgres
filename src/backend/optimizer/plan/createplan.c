@@ -1318,6 +1318,7 @@ create_append_plan(PlannerInfo *root, AppendPath *best_path, int flags)
 			Oid		   *sortOperators;
 			Oid		   *collations;
 			bool	   *nullsFirst;
+			int			presorted_keys;
 
 			/*
 			 * Compute sort column info, and adjust subplan's tlist as needed.
@@ -1353,14 +1354,38 @@ create_append_plan(PlannerInfo *root, AppendPath *best_path, int flags)
 						  numsortkeys * sizeof(bool)) == 0);
 
 			/* Now, insert a Sort node if subplan isn't sufficiently ordered */
-			if (!pathkeys_contained_in(pathkeys, subpath->pathkeys))
+			if (!pathkeys_count_contained_in(pathkeys, subpath->pathkeys,
+											 &presorted_keys))
 			{
-				Sort	   *sort = make_sort(subplan, numsortkeys,
+				Plan	   *sort_plan;
+
+				/*
+				 * We choose to use incremental sort if it is enabled and
+				 * there are presorted keys; otherwise we use full sort.
+				 */
+				if (enable_incremental_sort && presorted_keys > 0)
+				{
+					sort_plan = (Plan *)
+						make_incrementalsort(subplan, numsortkeys, presorted_keys,
 											 sortColIdx, sortOperators,
 											 collations, nullsFirst);
 
-				label_sort_with_costsize(root, sort, best_path->limit_tuples);
-				subplan = (Plan *) sort;
+					label_incrementalsort_with_costsize(root,
+														(IncrementalSort *) sort_plan,
+														pathkeys,
+														best_path->limit_tuples);
+				}
+				else
+				{
+					sort_plan = (Plan *) make_sort(subplan, numsortkeys,
+												   sortColIdx, sortOperators,
+												   collations, nullsFirst);
+
+					label_sort_with_costsize(root, (Sort *) sort_plan,
+											 best_path->limit_tuples);
+				}
+
+				subplan = sort_plan;
 			}
 		}
 
@@ -1491,6 +1516,7 @@ create_merge_append_plan(PlannerInfo *root, MergeAppendPath *best_path,
 		Oid		   *sortOperators;
 		Oid		   *collations;
 		bool	   *nullsFirst;
+		int			presorted_keys;
 
 		/* Build the child plan */
 		/* Must insist that all children return the same tlist */
@@ -1525,14 +1551,38 @@ create_merge_append_plan(PlannerInfo *root, MergeAppendPath *best_path,
 					  numsortkeys * sizeof(bool)) == 0);
 
 		/* Now, insert a Sort node if subplan isn't sufficiently ordered */
-		if (!pathkeys_contained_in(pathkeys, subpath->pathkeys))
+		if (!pathkeys_count_contained_in(pathkeys, subpath->pathkeys,
+										 &presorted_keys))
 		{
-			Sort	   *sort = make_sort(subplan, numsortkeys,
+			Plan	   *sort_plan;
+
+			/*
+			 * We choose to use incremental sort if it is enabled and there
+			 * are presorted keys; otherwise we use full sort.
+			 */
+			if (enable_incremental_sort && presorted_keys > 0)
+			{
+				sort_plan = (Plan *)
+					make_incrementalsort(subplan, numsortkeys, presorted_keys,
 										 sortColIdx, sortOperators,
 										 collations, nullsFirst);
 
-			label_sort_with_costsize(root, sort, best_path->limit_tuples);
-			subplan = (Plan *) sort;
+				label_incrementalsort_with_costsize(root,
+													(IncrementalSort *) sort_plan,
+													pathkeys,
+													best_path->limit_tuples);
+			}
+			else
+			{
+				sort_plan = (Plan *) make_sort(subplan, numsortkeys,
+											   sortColIdx, sortOperators,
+											   collations, nullsFirst);
+
+				label_sort_with_costsize(root, (Sort *) sort_plan,
+										 best_path->limit_tuples);
+			}
+
+			subplan = sort_plan;
 		}
 
 		subplans = lappend(subplans, subplan);
@@ -4344,13 +4394,16 @@ create_nestloop_plan(PlannerInfo *root,
 	NestLoop   *join_plan;
 	Plan	   *outer_plan;
 	Plan	   *inner_plan;
+	Relids		outerrelids;
 	List	   *tlist = build_path_tlist(root, &best_path->jpath.path);
 	List	   *joinrestrictclauses = best_path->jpath.joinrestrictinfo;
 	List	   *joinclauses;
 	List	   *otherclauses;
-	Relids		outerrelids;
 	List	   *nestParams;
+	List	   *outer_tlist;
+	bool		outer_parallel_safe;
 	Relids		saveOuterRels = root->curOuterRels;
+	ListCell   *lc;
 
 	/*
 	 * If the inner path is parameterized by the topmost parent of the outer
@@ -4372,8 +4425,8 @@ create_nestloop_plan(PlannerInfo *root,
 	outer_plan = create_plan_recurse(root, best_path->jpath.outerjoinpath, 0);
 
 	/* For a nestloop, include outer relids in curOuterRels for inner side */
-	root->curOuterRels = bms_union(root->curOuterRels,
-								   best_path->jpath.outerjoinpath->parent->relids);
+	outerrelids = best_path->jpath.outerjoinpath->parent->relids;
+	root->curOuterRels = bms_union(root->curOuterRels, outerrelids);
 
 	inner_plan = create_plan_recurse(root, best_path->jpath.innerjoinpath, 0);
 
@@ -4412,9 +4465,66 @@ create_nestloop_plan(PlannerInfo *root,
 	 * Identify any nestloop parameters that should be supplied by this join
 	 * node, and remove them from root->curOuterParams.
 	 */
-	outerrelids = best_path->jpath.outerjoinpath->parent->relids;
-	nestParams = identify_current_nestloop_params(root, outerrelids);
+	nestParams = identify_current_nestloop_params(root,
+												  outerrelids,
+												  PATH_REQ_OUTER((Path *) best_path));
 
+	/*
+	 * While nestloop parameters that are Vars had better be available from
+	 * the outer_plan already, there are edge cases where nestloop parameters
+	 * that are PHVs won't be.  In such cases we must add them to the
+	 * outer_plan's tlist, since the executor's NestLoopParam machinery
+	 * requires the params to be simple outer-Var references to that tlist.
+	 * (This is cheating a little bit, because the outer path's required-outer
+	 * relids might not be enough to allow evaluating such a PHV.  But in
+	 * practice, if we could have evaluated the PHV at the nestloop node, we
+	 * can do so in the outer plan too.)
+	 */
+	outer_tlist = outer_plan->targetlist;
+	outer_parallel_safe = outer_plan->parallel_safe;
+	foreach(lc, nestParams)
+	{
+		NestLoopParam *nlp = (NestLoopParam *) lfirst(lc);
+		PlaceHolderVar *phv;
+		TargetEntry *tle;
+
+		if (IsA(nlp->paramval, Var))
+			continue;			/* nothing to do for simple Vars */
+		/* Otherwise it must be a PHV */
+		phv = castNode(PlaceHolderVar, nlp->paramval);
+
+		if (tlist_member((Expr *) phv, outer_tlist))
+			continue;			/* already available */
+
+		/*
+		 * It's possible that nestloop parameter PHVs selected to evaluate
+		 * here contain references to surviving root->curOuterParams items
+		 * (that is, they reference values that will be supplied by some
+		 * higher-level nestloop).  Those need to be converted to Params now.
+		 * Note: it's safe to do this after the tlist_member() check, because
+		 * equal() won't pay attention to phv->phexpr.
+		 */
+		phv->phexpr = (Expr *) replace_nestloop_params(root,
+													   (Node *) phv->phexpr);
+
+		/* Make a shallow copy of outer_tlist, if we didn't already */
+		if (outer_tlist == outer_plan->targetlist)
+			outer_tlist = list_copy(outer_tlist);
+		/* ... and add the needed expression */
+		tle = makeTargetEntry((Expr *) copyObject(phv),
+							  list_length(outer_tlist) + 1,
+							  NULL,
+							  true);
+		outer_tlist = lappend(outer_tlist, tle);
+		/* ... and track whether tlist is (still) parallel-safe */
+		if (outer_parallel_safe)
+			outer_parallel_safe = is_parallel_safe(root, (Node *) phv);
+	}
+	if (outer_tlist != outer_plan->targetlist)
+		outer_plan = change_plan_targetlist(outer_plan, outer_tlist,
+											outer_parallel_safe);
+
+	/* And finally, we can build the join plan node */
 	join_plan = make_nestloop(tlist,
 							  joinclauses,
 							  otherclauses,

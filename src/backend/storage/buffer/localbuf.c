@@ -629,7 +629,7 @@ InvalidateLocalBuffer(BufferDesc *bufHdr, bool check_unreferenced)
 	 */
 	if (check_unreferenced &&
 		(LocalRefCount[bufid] != 0 || BUF_STATE_GET_REFCOUNT(buf_state) != 0))
-		elog(ERROR, "block %u of %s is still referenced (local %u)",
+		elog(ERROR, "block %u of %s is still referenced (local %d)",
 			 bufHdr->tag.blockNum,
 			 relpathbackend(BufTagGetRelFileLocator(&bufHdr->tag),
 							MyProcNumber,
@@ -660,10 +660,11 @@ InvalidateLocalBuffer(BufferDesc *bufHdr, bool check_unreferenced)
  *		See DropRelationBuffers in bufmgr.c for more notes.
  */
 void
-DropRelationLocalBuffers(RelFileLocator rlocator, ForkNumber forkNum,
-						 BlockNumber firstDelBlock)
+DropRelationLocalBuffers(RelFileLocator rlocator, ForkNumber *forkNum,
+						 int nforks, BlockNumber *firstDelBlock)
 {
 	int			i;
+	int			j;
 
 	for (i = 0; i < NLocBuffer; i++)
 	{
@@ -672,12 +673,18 @@ DropRelationLocalBuffers(RelFileLocator rlocator, ForkNumber forkNum,
 
 		buf_state = pg_atomic_read_u32(&bufHdr->state);
 
-		if ((buf_state & BM_TAG_VALID) &&
-			BufTagMatchesRelFileLocator(&bufHdr->tag, &rlocator) &&
-			BufTagGetForkNum(&bufHdr->tag) == forkNum &&
-			bufHdr->tag.blockNum >= firstDelBlock)
+		if (!(buf_state & BM_TAG_VALID) ||
+			!BufTagMatchesRelFileLocator(&bufHdr->tag, &rlocator))
+			continue;
+
+		for (j = 0; j < nforks; j++)
 		{
-			InvalidateLocalBuffer(bufHdr, true);
+			if (BufTagGetForkNum(&bufHdr->tag) == forkNum[j] &&
+				bufHdr->tag.blockNum >= firstDelBlock[j])
+			{
+				InvalidateLocalBuffer(bufHdr, true);
+				break;
+			}
 		}
 	}
 }
