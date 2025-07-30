@@ -1,0 +1,14 @@
+# Catalog
+
+For more details see https://www.postgresql.org/docs/devel/bki.html
+
+Below are some checklists for common scenarios.
+
+## Adding a New Built-in SQL Command
+
+1. Implement the function in C and place it in the appropriate directory under `src` (typically in `src/utils/adt`)
+2. Each function should have a unique integer OID. Run the script `src/include/catalog/unused_oids` to find available ranges.
+3. Add the entry to `pg_proc.dat` following the surrounding conventions.
+
+More detailed documentation adding a new SQL command is available at
+https://www.postgresql.org/docs/devel/xfunc-c.html
