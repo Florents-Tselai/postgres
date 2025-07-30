@@ -5002,6 +5002,7 @@ SELECT format('Testing %3$s, %2$s, %s', 'one', 'two', 'three');
        Encodes binary data into a textual representation; supported
        <parameter>format</parameter> values are:
        <link linkend="encode-format-base64"><literal>base64</literal></link>,
+       <link linkend="encode-format-base64url"><literal>base64url</literal></link>,
        <link linkend="encode-format-escape"><literal>escape</literal></link>,
        <link linkend="encode-format-hex"><literal>hex</literal></link>.
       </para>
@@ -5055,6 +5056,23 @@ SELECT format('Testing %3$s, %2$s, %s', 'one', 'two', 'three');
        newline, space, and tab characters.  Otherwise, an error is
        raised when <function>decode</function> is supplied invalid
        base64 data &mdash; including when trailing padding is incorrect.
+      </para>
+     </listitem>
+    </varlistentry>
+
+    <varlistentry id="encode-format-base64url">
+     <term>base64url
+      <indexterm>
+       <primary>base64url format</primary>
+      </indexterm></term>
+     <listitem>
+      <para>
+       The <literal>base64url</literal> format is a URL-safe variant of
+       <ulink url="https://datatracker.ietf.org/doc/html/rfc4648#section-5">RFC 4648
+        Section 5</ulink>. Unlike standard <literal>base64</literal>, it replaces
+       <literal>'+'</literal> with <literal>'-'</literal> and <literal>'/'</literal> with <literal>'_'</literal>
+       to ensure safe usage in URLs and filenames. Additionally, the padding character
+       <literal>'='</literal> is omitted.
       </para>
      </listitem>
     </varlistentry>
