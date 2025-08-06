@@ -273,6 +273,9 @@ hex_dec_len(const char *src, size_t srclen)
 static const char _base64[] =
 "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+static const char _base64url[] =
+"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
 static const int8 b64lookup[128] = {
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
@@ -285,7 +288,7 @@ static const int8 b64lookup[128] = {
 };
 
 static uint64
-pg_base64_encode(const char *src, size_t len, char *dst)
+pg_base64_encode_internal(const char *src, size_t len, char *dst, bool url)
 {
 	char	   *p,
 			   *lend = dst + 76;
@@ -293,6 +296,7 @@ pg_base64_encode(const char *src, size_t len, char *dst)
 			   *end = src + len;
 	int			pos = 2;
 	uint32		buf = 0;
+	const char *alphabet = url ? _base64url : _base64;
 
 	s = src;
 	p = dst;
@@ -306,33 +310,58 @@ pg_base64_encode(const char *src, size_t len, char *dst)
 		/* write it out */
 		if (pos < 0)
 		{
-			*p++ = _base64[(buf >> 18) & 0x3f];
-			*p++ = _base64[(buf >> 12) & 0x3f];
-			*p++ = _base64[(buf >> 6) & 0x3f];
-			*p++ = _base64[buf & 0x3f];
+			*p++ = alphabet[(buf >> 18) & 0x3f];
+			*p++ = alphabet[(buf >> 12) & 0x3f];
+			*p++ = alphabet[(buf >> 6) & 0x3f];
+			*p++ = alphabet[buf & 0x3f];
 
 			pos = 2;
 			buf = 0;
-		}
-		if (p >= lend)
-		{
-			*p++ = '\n';
-			lend = p + 76;
+
+			if (!url && p >= lend)
+			{
+				*p++ = '\n';
+				lend = p + 76;
+			}
 		}
 	}
+
+	/* handle remainder */
 	if (pos != 2)
 	{
-		*p++ = _base64[(buf >> 18) & 0x3f];
-		*p++ = _base64[(buf >> 12) & 0x3f];
-		*p++ = (pos == 0) ? _base64[(buf >> 6) & 0x3f] : '=';
-		*p++ = '=';
+		*p++ = alphabet[(buf >> 18) & 0x3f];
+		*p++ = alphabet[(buf >> 12) & 0x3f];
+
+		if (pos == 0)
+		{
+			*p++ = alphabet[(buf >> 6) & 0x3f];
+			if (!url)
+				*p++ = '=';
+		}
+		else if (!url)
+		{
+			*p++ = '=';
+			*p++ = '=';
+		}
 	}
 
 	return p - dst;
 }
 
 static uint64
-pg_base64_decode(const char *src, size_t len, char *dst)
+pg_base64_encode(const char *src, size_t len, char *dst)
+{
+	return pg_base64_encode_internal(src, len, dst, false);
+}
+
+static uint64
+pg_base64url_encode(const char *src, size_t len, char *dst)
+{
+	return pg_base64_encode_internal(src, len, dst, true);
+}
+
+static uint64
+pg_base64_decode_internal(const char *src, size_t len, char *dst, bool url)
 {
 	const char *srcend = src + len,
 			   *s = src;
@@ -349,6 +378,15 @@ pg_base64_decode(const char *src, size_t len, char *dst)
 
 		if (c == ' ' || c == '\t' || c == '\n' || c == '\r')
 			continue;
+
+		/* convert base64url to base64 */
+		if (url)
+		{
+			if (c == '-')
+				c = '+';
+			else if (c == '_')
+				c = '/';
+		}
 
 		if (c == '=')
 		{
@@ -374,8 +412,9 @@ pg_base64_decode(const char *src, size_t len, char *dst)
 			if (b < 0)
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("invalid symbol \"%.*s\" found while decoding base64 sequence",
-								pg_mblen(s - 1), s - 1)));
+						 errmsg("invalid symbol \"%.*s\" found while decoding %s sequence",
+								pg_mblen(s - 1), s - 1,
+								url ? "base64url" : "base64")));
 		}
 		/* add it to buffer */
 		buf = (buf << 6) + b;
@@ -392,15 +431,39 @@ pg_base64_decode(const char *src, size_t len, char *dst)
 		}
 	}
 
-	if (pos != 0)
+	if (pos == 2)
+	{
+		buf <<= 12;
+		*p++ = (buf >> 16) & 0xFF;
+	}
+	else if (pos == 3)
+	{
+		buf <<= 6;
+		*p++ = (buf >> 16) & 0xFF;
+		*p++ = (buf >> 8) & 0xFF;
+	}
+	else if (pos != 0)
+	{
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 				 errmsg("invalid base64 end sequence"),
 				 errhint("Input data is missing padding, is truncated, or is otherwise corrupted.")));
+	}
 
 	return p - dst;
 }
 
+static uint64
+pg_base64_decode(const char *src, size_t len, char *dst)
+{
+	return pg_base64_decode_internal(src, len, dst, false);
+}
+
+static uint64
+pg_base64url_decode(const char *src, size_t len, char *dst)
+{
+	return pg_base64_decode_internal(src, len, dst, true);
+}
 
 static uint64
 pg_base64_enc_len(const char *src, size_t srclen)
@@ -413,6 +476,32 @@ static uint64
 pg_base64_dec_len(const char *src, size_t srclen)
 {
 	return ((uint64) srclen * 3) >> 2;
+}
+
+static uint64
+pg_base64url_enc_len(const char *src, size_t srclen)
+{
+	/*
+	 * Unlike standard base64, base64url doesn't use padding characters when
+	 * the input length is not divisible by 3
+	 */
+	return (srclen + 2) / 3 * 4;
+}
+
+static uint64
+pg_base64url_dec_len(const char *src, size_t srclen)
+{
+	/*
+	 * For Base64, each 4 characters of input produce at most 3 bytes of
+	 * output. For Base64URL without padding, we need to round up to the
+	 * nearest 4
+	 */
+	size_t		adjusted_len = srclen;
+
+	if (srclen % 4 != 0)
+		adjusted_len += 4 - (srclen % 4);
+
+	return (adjusted_len * 3) / 4;
 }
 
 /*
@@ -604,6 +693,12 @@ static const struct
 		"base64",
 		{
 			pg_base64_enc_len, pg_base64_dec_len, pg_base64_encode, pg_base64_decode
+		}
+	},
+	{
+		"base64url",
+		{
+			pg_base64url_enc_len, pg_base64url_dec_len, pg_base64url_encode, pg_base64url_decode
 		}
 	},
 	{
