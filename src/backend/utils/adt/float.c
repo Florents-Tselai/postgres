@@ -3755,8 +3755,66 @@ float8_corr(PG_FUNCTION_ARGS)
 }
 
 Datum
+xicorr_transfn(PG_FUNCTION_ARGS) {
+	ArrayType  *state;
+	float8     *svals;
+	int         nelems;
+
+	/* if state is NULL, initialize to {0,0,0} */
+	if (PG_ARGISNULL(0))
+	{
+		Datum init[3];
+		int dims[1] = {3};
+		int lbs[1]  = {1};
+
+		init[0] = Float8GetDatum(0.0); /* n */
+		init[1] = Float8GetDatum(0.0); /* sumx */
+		init[2] = Float8GetDatum(0.0); /* sumy */
+
+		state = construct_md_array(init, NULL, 1, dims, lbs,
+								   FLOAT8OID, sizeof(float8), FLOAT8PASSBYVAL, 'd');
+	}
+	else
+	{
+		state = PG_GETARG_ARRAYTYPE_P(0);
+	}
+
+	nelems = ArrayGetNItems(ARR_NDIM(state), ARR_DIMS(state));
+	if (nelems != 3)
+		ereport(ERROR, (errmsg("xicorr_transfn: expected float8[3]")));
+
+	svals = (float8 *) ARR_DATA_PTR(state);
+
+	/* if x or y is NULL, just return */
+	if (PG_ARGISNULL(1) || PG_ARGISNULL(2))
+		PG_RETURN_ARRAYTYPE_P(state);
+
+	svals[0] += 1.0;                /* n++ */
+	svals[1] += PG_GETARG_FLOAT8(1); /* sumx */
+	svals[2] += PG_GETARG_FLOAT8(2); /* sumy */
+
+	PG_RETURN_ARRAYTYPE_P(state);
+}
+
+Datum
 float8_xicorr(PG_FUNCTION_ARGS) {
-	PG_RETURN_FLOAT8(100);;
+	if (PG_ARGISNULL(0))
+		PG_RETURN_NULL();
+
+	ArrayType *state = PG_GETARG_ARRAYTYPE_P(0);
+	int nelems = ArrayGetNItems(ARR_NDIM(state), ARR_DIMS(state));
+	if (nelems != 3)
+		ereport(ERROR, (errmsg("float8_xicorr: expected float8[3]")));
+
+	float8 *svals = (float8 *) ARR_DATA_PTR(state);
+	double n = svals[0];
+	double sumx = svals[1];
+	double sumy = svals[2];
+
+	if (n == 0.0)
+		PG_RETURN_NULL();
+
+	PG_RETURN_FLOAT8((sumx + sumy) / n);
 }
 
 Datum
