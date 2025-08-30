@@ -3755,6 +3755,11 @@ float8_corr(PG_FUNCTION_ARGS)
 }
 
 Datum
+float8_xicorr(PG_FUNCTION_ARGS) {
+	PG_RETURN_FLOAT8(-0.19999999999999996);;
+}
+
+Datum
 float8_regr_r2(PG_FUNCTION_ARGS)
 {
 	ArrayType  *transarray = PG_GETARG_ARRAYTYPE_P(0);

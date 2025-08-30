@@ -5165,6 +5165,9 @@
 { oid => '2817', descr => 'aggregate final function',
   proname => 'float8_corr', prorettype => 'float8', proargtypes => '_float8',
   prosrc => 'float8_corr' },
+{ oid => '2775', descr => 'aggregate final function',
+  proname => 'float8_xicorr', prorettype => 'float8', proargtypes => '_float8',
+  prosrc => 'float8_corr' },
 
 { oid => '3535', descr => 'aggregate transition function',
   proname => 'string_agg_transfn', proisstrict => 'f', prorettype => 'internal',
@@ -7310,6 +7313,9 @@
   prosrc => 'aggregate_dummy' },
 { oid => '2829', descr => 'correlation coefficient',
   proname => 'corr', prokind => 'a', proisstrict => 'f', prorettype => 'float8',
+  proargtypes => 'float8 float8', prosrc => 'aggregate_dummy' },
+{ oid => '3063', descr => 'xi correlation coefficient',
+  proname => 'xicorr', prokind => 'a', proisstrict => 'f', prorettype => 'float8',
   proargtypes => 'float8 float8', prosrc => 'aggregate_dummy' },
 
 { oid => '2160',
