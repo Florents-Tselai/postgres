@@ -5167,7 +5167,7 @@
   prosrc => 'float8_corr' },
 { oid => '2775', descr => 'aggregate final function',
   proname => 'float8_xicorr', prorettype => 'float8', proargtypes => '_float8',
-  prosrc => 'float8_corr' },
+  prosrc => 'float8_xicorr' },
 
 { oid => '3535', descr => 'aggregate transition function',
   proname => 'string_agg_transfn', proisstrict => 'f', prorettype => 'internal',
