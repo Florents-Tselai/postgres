@@ -3807,6 +3807,37 @@ xicorr_transfn(PG_FUNCTION_ARGS)
 	PG_RETURN_POINTER(st);
 }
 
+/* Compare indices by Y */
+static int
+cmp_y(const void *a, const void *b, void *arg)
+{
+	const XiState *st = (const XiState *) arg;
+	int ia = *(const int *)a;
+	int ib = *(const int *)b;
+
+	if (st->ys[ia] < st->ys[ib]) return -1;
+	if (st->ys[ia] > st->ys[ib]) return 1;
+	return 0;
+}
+
+/* Compare indices by X (break ties with Y) */
+static int
+cmp_x_then_y(const void *a, const void *b, void *arg)
+{
+	const XiState *st = (const XiState *) arg;
+	int ia = *(const int *)a;
+	int ib = *(const int *)b;
+
+	if (st->xs[ia] < st->xs[ib]) return -1;
+	if (st->xs[ia] > st->xs[ib]) return 1;
+
+	if (st->ys[ia] < st->ys[ib]) return -1;
+	if (st->ys[ia] > st->ys[ib]) return 1;
+
+	return 0;
+}
+
+PG_FUNCTION_INFO_V1(float8_xicorr);
 Datum
 float8_xicorr(PG_FUNCTION_ARGS)
 {
@@ -3814,15 +3845,60 @@ float8_xicorr(PG_FUNCTION_ARGS)
 		PG_RETURN_NULL();
 
 	XiState *st = (XiState *) PG_GETARG_POINTER(0);
-	if (st->n == 0)
+	int n = st->n;
+
+	if (n < 2)
 		PG_RETURN_NULL();
 
-	/* toy computation: average of (x+y) */
-	double sum = 0.0;
-	for (int i = 0; i < st->n; i++)
-		sum += st->xs[i] + st->ys[i];
+	/* --- 1. rank Y --- */
+	int *iy = palloc(sizeof(int) * n);
+	for (int i = 0; i < n; i++) iy[i] = i;
 
-	PG_RETURN_FLOAT8(sum / st->n);
+	qsort_arg(iy, n, sizeof(int), cmp_y, st);
+
+	double *rankY = palloc(sizeof(double) * n);
+
+	for (int i = 0; i < n; )
+	{
+		int j = i + 1;
+		while (j < n && st->ys[iy[j]] == st->ys[iy[i]])
+			j++;
+
+		/* average rank for ties */
+		double avg = ((double)(i + 1) + (double)j) / 2.0;
+		for (int k = i; k < j; k++)
+			rankY[iy[k]] = avg;
+
+		i = j;
+	}
+
+	/* --- 2. order indices by X (break ties by Y) --- */
+	int *ix = palloc(sizeof(int) * n);
+	for (int i = 0; i < n; i++) ix[i] = i;
+
+	qsort_arg(ix, n, sizeof(int), cmp_x_then_y, st);
+
+	/* --- 3. sum successive rank differences --- */
+	long double S = 0.0;
+	for (int t = 0; t < n - 1; t++)
+	{
+		int i0 = ix[t];
+		int i1 = ix[t + 1];
+		S += fabsl((long double)rankY[i1] - (long double)rankY[i0]);
+	}
+
+	/* --- 4. coefficient --- */
+	long double denom = (long double)n * (long double)n - 1.0L;
+	if (denom <= 0.0L)
+		PG_RETURN_NULL();
+
+	long double xi = 1.0L - (3.0L * S) / denom;
+
+	/* Clamp to [0,1] in small samples */
+	if (xi < 0.0L) xi = 0.0L;
+	if (xi > 1.0L) xi = 1.0L;
+
+	PG_RETURN_FLOAT8((double)xi);
 }
 
 Datum

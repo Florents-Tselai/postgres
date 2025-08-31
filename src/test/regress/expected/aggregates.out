@@ -497,9 +497,9 @@ SELECT corr(b, a) FROM aggtest;
 (1 row)
 
 SELECT xicorr(b, a) FROM aggtest;
-      xicorr      
-------------------
- 157.443152273074
+ xicorr 
+--------
+      0
 (1 row)
 
 -- check single-tuple behavior
