@@ -509,8 +509,7 @@
 { aggfnoid     => 'xicorr',
   aggtransfn   => 'xicorr_transfn',
   aggfinalfn   => 'float8_xicorr',
-  aggtranstype => '_float8',
-  agginitval   => '{0,0,0}' },
+  aggtranstype => 'internal'},
 
 # boolean-and and boolean-or
 { aggfnoid => 'bool_and', aggtransfn => 'booland_statefunc',
