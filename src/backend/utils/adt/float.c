@@ -3847,9 +3847,7 @@ float8_xicorr(PG_FUNCTION_ARGS)
 	int n, j;
 	int *ix, *iy;
 	double *rankY;
-	double avg;
-	long double S;
-	long double denom, xi;
+	double avg, S, denom, xi;
 
 	if (PG_ARGISNULL(0))
 		PG_RETURN_NULL();
@@ -3894,21 +3892,23 @@ float8_xicorr(PG_FUNCTION_ARGS)
 	{
 		int i0 = ix[t];
 		int i1 = ix[t + 1];
-		S += fabsl((long double)rankY[i1] - (long double)rankY[i0]);
+		S += fabsl((double)rankY[i1] - (double)rankY[i0]);
 	}
 
 	/* --- 4. coefficient --- */
-	denom = (long double)n * (long double)n - 1.0L;
+	denom = (double)n * (double)n - 1.0L;
 	if (denom <= 0.0L)
 		PG_RETURN_NULL();
 
-	xi = 1.0L - (3.0L * S) / denom;
+	xi = 1.0 - (3.0 * S) / denom;
 
-	/* Clamp to [0,1] in small samples */
-	if (xi < 0.0L) xi = 0.0L;
-	if (xi > 1.0L) xi = 1.0L;
+	/* Clamp to [0,1] if desired */
+	if (xi < 0.0)
+		xi = 0.0;
+	else if (xi > 1.0)
+		xi = 1.0;
 
-	PG_RETURN_FLOAT8((double)xi);
+	PG_RETURN_FLOAT8(xi);
 }
 
 Datum
