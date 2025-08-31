@@ -3839,7 +3839,6 @@ cmp_x_then_y(const void *a, const void *b, void *arg)
 	return 0;
 }
 
-PG_FUNCTION_INFO_V1(float8_xicorr);
 Datum
 float8_xicorr(PG_FUNCTION_ARGS)
 {
