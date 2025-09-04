@@ -5165,6 +5165,12 @@
 { oid => '2817', descr => 'aggregate final function',
   proname => 'float8_corr', prorettype => 'float8', proargtypes => '_float8',
   prosrc => 'float8_corr' },
+{ oid => '2775', descr => 'xicorr transition function', prokind => 'f',
+  proname => 'xicorr_transfn', prorettype => 'internal', proargtypes => 'internal float8 float8',
+  prosrc => 'xicorr_transfn', proisstrict => 'f', provolatile  => 'i', proparallel  => 's' },
+{ oid => '3814', descr => 'aggregate final function', prokind => 'f',
+  proname => 'float8_xicorr', prorettype => 'float8', proargtypes => 'internal',
+  prosrc => 'float8_xicorr', proisstrict  => 't', provolatile  => 'i', proparallel  => 's' },
 
 { oid => '3535', descr => 'aggregate transition function',
   proname => 'string_agg_transfn', proisstrict => 'f', prorettype => 'internal',
@@ -7310,6 +7316,9 @@
   prosrc => 'aggregate_dummy' },
 { oid => '2829', descr => 'correlation coefficient',
   proname => 'corr', prokind => 'a', proisstrict => 'f', prorettype => 'float8',
+  proargtypes => 'float8 float8', prosrc => 'aggregate_dummy' },
+{ oid => '3063', descr => 'xi correlation coefficient',
+  proname => 'xicorr', prokind => 'a', proisstrict => 'f', prorettype => 'float8',
   proargtypes => 'float8 float8', prosrc => 'aggregate_dummy' },
 
 { oid => '2160',

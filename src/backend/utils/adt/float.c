@@ -3754,6 +3754,162 @@ float8_corr(PG_FUNCTION_ARGS)
 	PG_RETURN_FLOAT8(Sxy / sqrt(Sxx * Syy));
 }
 
+/* xicorr(X, Y) infrastructure */
+
+typedef struct XiState
+{
+	int     n;       /* number of rows */
+	int     cap;     /* allocated capacity */
+	double *xs;
+	double *ys;
+} XiState;
+
+Datum
+xicorr_transfn(PG_FUNCTION_ARGS)
+{
+	MemoryContext aggctx;
+	XiState *st;
+	int newcap;
+	double x = PG_GETARG_FLOAT8(1);
+	double y = PG_GETARG_FLOAT8(2);
+
+	if (!AggCheckCallContext(fcinfo, &aggctx))
+		elog(ERROR, "must be called as aggregate");
+
+	if (PG_ARGISNULL(0))
+	{
+		/* first call */
+		st = (XiState *) MemoryContextAllocZero(aggctx, sizeof(XiState));
+		st->cap = 64;
+		st->xs = (double *) MemoryContextAlloc(aggctx, sizeof(double)*st->cap);
+		st->ys = (double *) MemoryContextAlloc(aggctx, sizeof(double)*st->cap);
+		st->n  = 0;
+	}
+	else
+	{
+		st = (XiState *) PG_GETARG_POINTER(0);
+	}
+
+	if (PG_ARGISNULL(1) || PG_ARGISNULL(2))
+		PG_RETURN_POINTER(st);
+
+	/* grow if needed */
+	if (st->n >= st->cap)
+	{
+		newcap = st->cap * 2;
+		st->xs = (double *) repalloc(st->xs, sizeof(double)*newcap);
+		st->ys = (double *) repalloc(st->ys, sizeof(double)*newcap);
+		st->cap = newcap;
+	}
+
+	st->xs[st->n] = x;
+	st->ys[st->n] = y;
+	st->n++;
+
+	PG_RETURN_POINTER(st);
+}
+
+/* Compare indices by Y */
+static int
+cmp_y(const void *a, const void *b, void *arg)
+{
+	const XiState *st = (const XiState *) arg;
+	int ia = *(const int *)a;
+	int ib = *(const int *)b;
+
+	if (st->ys[ia] < st->ys[ib]) return -1;
+	if (st->ys[ia] > st->ys[ib]) return 1;
+	return 0;
+}
+
+/* Compare indices by X (break ties with Y) */
+static int
+cmp_x_then_y(const void *a, const void *b, void *arg)
+{
+	const XiState *st = (const XiState *) arg;
+	int ia = *(const int *)a;
+	int ib = *(const int *)b;
+
+	if (st->xs[ia] < st->xs[ib]) return -1;
+	if (st->xs[ia] > st->xs[ib]) return 1;
+
+	if (st->ys[ia] < st->ys[ib]) return -1;
+	if (st->ys[ia] > st->ys[ib]) return 1;
+
+	return 0;
+}
+
+Datum
+float8_xicorr(PG_FUNCTION_ARGS)
+{
+	XiState *st;
+	int n, j;
+	int *ix, *iy;
+	double *rankY;
+	double avg, S, denom, xi;
+
+	if (PG_ARGISNULL(0))
+		PG_RETURN_NULL();
+
+	st = (XiState *) PG_GETARG_POINTER(0);
+	n = st->n;
+
+	if (n < 2)
+		PG_RETURN_NULL();
+
+	/* --- 1. rank Y --- */
+	iy = palloc(sizeof(int) * n);
+	for (int i = 0; i < n; i++) iy[i] = i;
+
+	qsort_arg(iy, n, sizeof(int), cmp_y, st);
+
+	rankY = palloc(sizeof(double) * n);
+
+	for (int i = 0; i < n; )
+	{
+		j = i + 1;
+		while (j < n && st->ys[iy[j]] == st->ys[iy[i]])
+			j++;
+
+		/* average rank for ties */
+		avg = ((double)(i + 1) + (double)j) / 2.0;
+		for (int k = i; k < j; k++)
+			rankY[iy[k]] = avg;
+
+		i = j;
+	}
+
+	/* --- 2. order indices by X (break ties by Y) --- */
+	ix = palloc(sizeof(int) * n);
+	for (int i = 0; i < n; i++) ix[i] = i;
+
+	qsort_arg(ix, n, sizeof(int), cmp_x_then_y, st);
+
+	/* --- 3. sum successive rank differences --- */
+	S = 0.0;
+	for (int t = 0; t < n - 1; t++)
+	{
+		int i0 = ix[t];
+		int i1 = ix[t + 1];
+		S += fabsl(rankY[i1] - rankY[i0]);
+	}
+
+	/* --- 4. coefficient --- */
+	denom = (double)n * (double)n - 1.0L;
+	if (denom <= 0.0L)
+		PG_RETURN_NULL();
+
+	xi = 1.0 - (3.0 * S) / denom;
+
+	/* Clamp to [0,1] if desired */
+	if (xi < 0.0)
+		xi = 0.0;
+	else if (xi > 1.0)
+		xi = 1.0;
+
+	PG_RETURN_FLOAT8(xi);
+}
+
 Datum
 float8_regr_r2(PG_FUNCTION_ARGS)
 {
