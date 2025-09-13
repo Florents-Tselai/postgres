@@ -496,6 +496,16 @@ SELECT corr(b, a) FROM aggtest;
  0.139634516517873
 (1 row)
 
+CREATE TEMPORARY TABLE bigger_aggtest AS
+SELECT g AS a,
+       g*g + 2 AS b
+FROM generate_series(1,100) g;
+SELECT xicorr(b, a) FROM bigger_aggtest;
+      xicorr      
+------------------
+ 0.97029702970297
+(1 row)
+
 -- check single-tuple behavior
 SELECT covar_pop(1::float8,2::float8), covar_samp(3::float8,4::float8);
  covar_pop | covar_samp 
