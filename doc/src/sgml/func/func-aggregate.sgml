@@ -1091,6 +1091,34 @@ SELECT count(*) FROM sometable;
        </para></entry>
        <entry>Yes</entry>
       </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>xi correlation</primary>
+        </indexterm>
+        <indexterm>
+         <primary>xicorr</primary>
+        </indexterm>
+        <function>xicorr</function> ( <parameter>Y</parameter> <type>double precision</type>, <parameter>X</parameter> <type>double precision</type> )
+        <returnvalue>double precision</returnvalue>
+       </para>
+       <para>
+        Computes Chaterjee's Χi (ξ) correlation coefficient.
+        The xi correlation coefficient is a measure of association between two variables;
+        the value tends to be close to zero when the variables
+        are independent and close to 1 when there is a strong association.
+        Unlike other correlation coefficients,
+        the xi correlation is effective even when the association is not monotonic.
+        Note that this statistic is non-symmetric by design.
+        Tied values of <replaceable>x</replaceable> are ordered
+        deterministically by their <replaceable>y</replaceable>
+        values. This differs from some software which breaks ties arbitrarily.
+        With small samples, the sample coefficient can be slightly negative.
+        This implementation clamps such values to 0.
+       </para></entry>
+       <entry>Yes</entry>
+      </row>
      </tbody>
     </tgroup>
    </table>
