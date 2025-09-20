@@ -134,6 +134,7 @@ SELECT regr_r2(b, a) FROM aggtest;
 SELECT regr_slope(b, a), regr_intercept(b, a) FROM aggtest;
 SELECT covar_pop(b, a), covar_samp(b, a) FROM aggtest;
 SELECT corr(b, a) FROM aggtest;
+SELECT xicorr(b, a) FROM aggtest;
 
 -- check single-tuple behavior
 SELECT covar_pop(1::float8,2::float8), covar_samp(3::float8,4::float8);
