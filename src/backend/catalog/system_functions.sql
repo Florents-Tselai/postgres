@@ -621,6 +621,13 @@ LANGUAGE INTERNAL
 STRICT STABLE PARALLEL SAFE
 AS 'json_strip_nulls';
 
+CREATE OR REPLACE FUNCTION
+    jsonb_translate(target jsonb, from_ text, to_ text)
+    RETURNS jsonb
+    LANGUAGE INTERNAL
+    STRICT STABLE PARALLEL SAFE
+AS 'jsonb_translate';
+
 -- default normalization form is NFC, per SQL standard
 CREATE OR REPLACE FUNCTION
   "normalize"(text, text DEFAULT 'NFC')

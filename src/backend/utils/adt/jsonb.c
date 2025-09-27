@@ -24,6 +24,7 @@
 #include "utils/jsonfuncs.h"
 #include "utils/lsyscache.h"
 #include "utils/typcache.h"
+#include "utils/varlena.h"
 
 typedef struct JsonbInState
 {
@@ -2251,4 +2252,48 @@ JsonbUnquote(Jsonb *jb)
 	}
 	else
 		return JsonbToCString(NULL, &jb->root, VARSIZE(jb));
+}
+typedef struct
+{
+	text    *from;
+	text    *to;
+	Oid     collation;
+	bool    with_keys;
+} TranslateState;
+
+static text *
+translate_jsonb_string_action(void *vstate, char *elem_value, int elem_len)
+{
+	TranslateState *state = (TranslateState *) vstate;
+
+	char   *from_str = VARDATA_ANY(state->from);
+	int     from_len = VARSIZE_ANY_EXHDR(state->from);
+
+	if (varstr_cmp(elem_value, elem_len,
+				   from_str, from_len,
+				   state->collation) == 0)
+		return state->to;
+
+	return cstring_to_text_with_len(elem_value, elem_len);
+}
+
+Datum
+jsonb_translate(PG_FUNCTION_ARGS)
+{
+	Jsonb   *jb = PG_GETARG_JSONB_P(0);
+	text    *from = PG_GETARG_TEXT_PP(1);
+	text    *to = PG_GETARG_TEXT_PP(2);
+	bool    with_keys = PG_GETARG_BOOL(3);
+	Oid     collation = PG_GET_COLLATION();
+	Jsonb   *res;
+
+	TranslateState *state = palloc0(sizeof(TranslateState));
+	state->from = from;
+	state->to = to;
+	state->collation = collation;
+	state->with_keys = with_keys;
+
+	res = transform_jsonb_string_values(jb, state, translate_jsonb_string_action);
+
+	PG_RETURN_JSONB_P(res);
 }
