@@ -888,3 +888,11 @@ select ts_headline('english', '{"a": "aaa bbb", "b": {"c": "ccc ddd fff", "c1": 
 select ts_headline('null'::json, tsquery('aaa & bbb'));
 select ts_headline('{}'::json, tsquery('aaa & bbb'));
 select ts_headline('[]'::json, tsquery('aaa & bbb'));
+
+-- json_translate
+select json_translate('{"message": "world"}', 'world', 'earth'); -- basic case
+select json_translate('"hello world"', 'world', 'earth'); -- shouldn't change
+select json_translate('"hello world"', 'hello world', 'hello earth'); -- this should
+select json_translate('{"message": "world", "elements": ["world", "orange"]}', 'world', 'earth'); -- in arrays
+-- should *not* touch keys by default
+select json_translate('{"world": "ok"}', 'world', 'earth');

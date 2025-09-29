@@ -1845,6 +1845,32 @@ ERROR:  value too long for type character(2)
         <returnvalue>t</returnvalue>
        </para></entry>
       </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
+        <indexterm>
+         <primary>json_translate</primary>
+        </indexterm>
+        <function>json_translate</function> ( <type>jsonb</type>, <type>text</type>, <type>text</type> )
+        <returnvalue>json</returnvalue>
+       </para>
+        <para role="func_signature">
+        <indexterm>
+         <primary>jsonb_translate</primary>
+        </indexterm>
+        <function>jsonb_translate</function> ( <type>jsonb</type>, <type>text</type>, <type>text</type> )
+        <returnvalue>jsonb</returnvalue>
+       </para>
+        <para>
+         Recursively replaces string values in a document that exactly match
+         the second argument with the third argument.
+        </para>
+        <para>
+         <literal>jsonb_translate('{"message": "world", "elements": ["world", "orange"]}', 'world', 'earth')</literal>
+         <returnvalue>{"message": "earth", "elements": ["earth", "orange"]}</returnvalue>
+        </para>
+       </entry>
+      </row>
      </tbody>
     </tgroup>
    </table>

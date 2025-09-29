@@ -9473,6 +9473,12 @@
 { oid => '3968', descr => 'get the type of a json value',
   proname => 'json_typeof', prorettype => 'text', proargtypes => 'json',
   prosrc => 'json_typeof' },
+{ oid => '4175', descr => 'replace recursively json string values',
+  proname => 'jsonb_translate', prorettype => 'jsonb', proargtypes => 'jsonb text text',
+  prosrc => 'jsonb_translate' },
+{ oid => '4176', descr => 'replace recursively json string values',
+  proname => 'json_translate', prorettype => 'json', proargtypes => 'json text text',
+  prosrc => 'json_translate' },
 
 # uuid
 { oid => '2952', descr => 'I/O',

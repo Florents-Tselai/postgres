@@ -5831,3 +5831,35 @@ select '12345.0000000000000000000000000000000000000000000005'::jsonb::int8;
  12345
 (1 row)
 
+-- jsonb_translate
+select jsonb_translate('{"message": "world"}', 'world', 'earth'); -- basic case
+   jsonb_translate    
+----------------------
+ {"message": "earth"}
+(1 row)
+
+select jsonb_translate('"hello world"', 'world', 'earth'); -- shouldn't change
+ jsonb_translate 
+-----------------
+ "hello world"
+(1 row)
+
+select jsonb_translate('"hello world"', 'hello world', 'hello earth'); -- this should
+ jsonb_translate 
+-----------------
+ "hello earth"
+(1 row)
+
+select jsonb_translate('{"message": "world", "elements": ["world", "orange"]}', 'world', 'earth'); -- in arrays
+                    jsonb_translate                    
+-------------------------------------------------------
+ {"message": "earth", "elements": ["earth", "orange"]}
+(1 row)
+
+-- should *not* touch keys by default
+select jsonb_translate('{"world": "ok"}', 'world', 'earth');
+ jsonb_translate 
+-----------------
+ {"world": "ok"}
+(1 row)
+

@@ -1590,3 +1590,11 @@ select '12345.0000000000000000000000000000000000000000000005'::jsonb::float8;
 select '12345.0000000000000000000000000000000000000000000005'::jsonb::int2;
 select '12345.0000000000000000000000000000000000000000000005'::jsonb::int4;
 select '12345.0000000000000000000000000000000000000000000005'::jsonb::int8;
+
+-- jsonb_translate
+select jsonb_translate('{"message": "world"}', 'world', 'earth'); -- basic case
+select jsonb_translate('"hello world"', 'world', 'earth'); -- shouldn't change
+select jsonb_translate('"hello world"', 'hello world', 'hello earth'); -- this should
+select jsonb_translate('{"message": "world", "elements": ["world", "orange"]}', 'world', 'earth'); -- in arrays
+-- should *not* touch keys by default
+select jsonb_translate('{"world": "ok"}', 'world', 'earth');

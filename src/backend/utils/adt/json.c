@@ -29,6 +29,7 @@
 #include "utils/jsonfuncs.h"
 #include "utils/lsyscache.h"
 #include "utils/typcache.h"
+#include "utils/varlena.h"
 
 
 /*
@@ -1910,4 +1911,46 @@ json_typeof(PG_FUNCTION_ARGS)
 	}
 
 	PG_RETURN_TEXT_P(cstring_to_text(type));
+}
+
+typedef struct
+{
+	text    *from;
+	text    *to;
+	Oid     collation;
+} TranslateState;
+
+static text *
+translate_json_string_action(void *vstate, char *elem_value, int elem_len)
+{
+	TranslateState *state = (TranslateState *) vstate;
+
+	char   *from_str = VARDATA_ANY(state->from);
+	int     from_len = VARSIZE_ANY_EXHDR(state->from);
+
+	if (varstr_cmp(elem_value, elem_len,
+				   from_str, from_len,
+				   state->collation) == 0)
+		return state->to;
+
+	return cstring_to_text_with_len(elem_value, elem_len);
+}
+
+Datum
+json_translate(PG_FUNCTION_ARGS)
+{
+	text    *json = PG_GETARG_TEXT_PP(0);
+	text    *from = PG_GETARG_TEXT_PP(1);
+	text    *to = PG_GETARG_TEXT_PP(2);
+	text    *res;
+
+	TranslateState *state = palloc0(sizeof(TranslateState));
+	state->from = from;
+	state->to = to;
+	state->collation = PG_GET_COLLATION();
+
+	res = transform_json_string_values(json, state,
+									   translate_json_string_action);
+
+	PG_RETURN_TEXT_P(res);
 }
