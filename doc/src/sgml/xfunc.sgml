@@ -3687,18 +3687,32 @@ LWLockRelease(AddinShmemInitLock);
     </sect3>
 
     <sect3 id="xfunc-shared-addin-after-startup">
-     <title>Requesting Shared Memory After Startup</title>
+     <title>DSM Registry</title>
 
      <para>
-      There is another, more flexible method of reserving shared memory that
-      can be done after server startup and outside a
-      <literal>shmem_request_hook</literal>.  To do so, each backend that will
-      use the shared memory should obtain a pointer to it by calling:
-<programlisting>
-void *GetNamedDSMSegment(const char *name, size_t size,
+      Another, more flexible way to reserve shared memory after server startup
+      (and outside a <literal>shmem_request_hook</literal>) is to use the dynamic shared memory (DSM) registry.
+      The registry maps library-defined string keys to DSM handles.
+      It supports creating named DSM segments with <function>GetNamedDSMSegment</function>,
+      named dynamic shared memory areas (DSAs) with <function>GetNamedDSA</function>,
+      and named hash tables backed by a DSA with <function>GetNamedDSHash</function>.
+     </para>
+
+     <para>
+      Unlike shared memory reserved at server startup, there is no need to
+      acquire <function>AddinShmemInitLock</function> or otherwise take action
+      to avoid race conditions when reserving shared memory with these functions.
+      They ensure that only one backend allocates and initializes the memory structure and that all other
+      backends receive an appropriate pointer to the fully allocated and initialized segment, area or hash table.
+     </para>
+
+     <para>
+      Consider for example this function to allocate a named DSM segment.
+      <programlisting>
+       void *GetNamedDSMSegment(const char *name, size_t size,
                          void (*init_callback) (void *ptr),
                          bool *found)
-</programlisting>
+      </programlisting>
       If a dynamic shared memory segment with the given name does not yet
       exist, this function will allocate it and initialize it with the provided
       <function>init_callback</function> callback function.  If the segment has
@@ -3707,19 +3721,34 @@ void *GetNamedDSMSegment(const char *name, size_t size,
       backend.
      </para>
 
+     <para>The same logic applies to the other functions offered by the registry.</para>
+
      <para>
-      Unlike shared memory reserved at server startup, there is no need to
-      acquire <function>AddinShmemInitLock</function> or otherwise take action
-      to avoid race conditions when reserving shared memory with
-      <function>GetNamedDSMSegment</function>.  This function ensures that only
-      one backend allocates and initializes the segment and that all other
-      backends receive a pointer to the fully allocated and initialized
-      segment.
+      To allocate a named DSA, one can use
+      <programlisting>
+       dsa_area *GetNamedDSA(const char *name, bool *found)
+      </programlisting>
+
+      Νote that this should be called at most once for a given DSA in each backend.
      </para>
 
      <para>
-      A complete usage example of <function>GetNamedDSMSegment</function> can
-      be found in
+      To allocate a named hash table backed by shared memory, one can use
+      <programlisting>
+       dshash_table *GetNamedDSHash(const char *name, const dshash_parameters *params, bool *found)
+      </programlisting>
+
+      Also note that this should be called at most once for a given table in each backend.
+     </para>
+
+     <para>
+      To monitor the allocations of the DSM registry
+      the <literal>pg_dsm_registry_allocations</literal> system view
+      documented in <xref linkend="view-pg-dsm-registry-allocations"/> can be used.
+     </para>
+
+     <para>
+      A complete usage example of the DSM Registry and its facilities can be found in
       <filename>src/test/modules/test_dsm_registry/test_dsm_registry.c</filename>
       in the <productname>PostgreSQL</productname> source tree.
      </para>
