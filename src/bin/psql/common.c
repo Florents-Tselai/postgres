@@ -2705,3 +2705,21 @@ recognized_connection_string(const char *connstr)
 {
 	return uri_prefix_length(connstr) != 0 || strchr(connstr, '=') != NULL;
 }
+
+/*
+ * Return the session search_path.
+ */
+const char *
+session_search_path(void)
+{
+	const char *val;
+
+	if (!pset.db)
+		return NULL;
+
+	val = PQparameterStatus(pset.db, "search_path");
+	if (val)
+		return val;
+	else
+		return PQuser(pset.db);
+}

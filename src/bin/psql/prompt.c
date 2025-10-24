@@ -176,6 +176,18 @@ get_prompt(promptStatus_t status, ConditionalStack cstack)
 							strlcpy(buf, service_name, sizeof(buf));
 					}
 					break;
+					/* %S: current search_path, or "?" if not reported by the server */
+				case 'S':
+					/*
+					 * Distinguish unknown (NULL) from an empty but valid search_path ("").
+					 * If not connected or older server doesn't report it via ParameterStatus,
+					 * show "?".
+					 */
+					if (!pset.db || PQparameterStatus(pset.db, "search_path") == NULL)
+						strlcpy(buf, "?", sizeof(buf));
+					else
+						strlcpy(buf, PQparameterStatus(pset.db, "search_path"), sizeof(buf));
+					break;
 					/* backend pid */
 				case 'p':
 					if (pset.db)
