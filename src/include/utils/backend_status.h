@@ -174,6 +174,9 @@ typedef struct PgBackendStatus
 
 	/* plan identifier, optionally computed using planner_hook */
 	int64		st_plan_id;
+
+	/* query trace info passed via GUC and exposed in pg_stat_activity */
+	char		*st_query_trace_info;
 } PgBackendStatus;
 
 
@@ -326,6 +329,7 @@ extern void pgstat_report_plan_id(int64 plan_id, bool force);
 extern void pgstat_report_tempfile(size_t filesize);
 extern void pgstat_report_appname(const char *appname);
 extern void pgstat_report_xact_timestamp(TimestampTz tstamp);
+extern void pgstat_report_query_trace_info(const char *query_trace_info);
 extern const char *pgstat_get_backend_current_activity(int pid, bool checkUser);
 extern const char *pgstat_get_crashed_backend_activity(int pid, char *buffer,
 													   int buflen);

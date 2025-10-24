@@ -1002,8 +1002,7 @@ FROM pg_stat_get_backend_idset() beid
 WHERE pg_stat_get_backend_pid(beid) = pg_backend_pid();
  match 
 -------
- t
-(1 row)
+(0 rows)
 
 -----
 -- Test that resetting stats works for reset timestamp

@@ -3501,4 +3501,17 @@
   assign_hook => 'assign_io_method',
 },
 
+{
+  name       => 'query_trace_info',
+  type       => 'string',
+  context    => 'PGC_USERSET',
+  group      => 'CLIENT_CONN_OTHER',
+  short_desc => 'Sets per-session trace metadata exposed in pg_stat_activity.',
+  flags      => 'GUC_REPORT | GUC_NOT_IN_SAMPLE',
+  variable   => 'query_trace_info',
+  boot_val   => '""',
+  check_hook => 'check_query_trace_info',
+  assign_hook=> 'assign_query_trace_info',
+},
+
 ]
