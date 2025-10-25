@@ -46,4 +46,6 @@ extern void clean_extended_state(void);
 
 extern bool recognized_connection_string(const char *connstr);
 
+extern const char *session_search_path(void);
+
 #endif							/* COMMON_H */

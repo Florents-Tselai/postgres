@@ -176,6 +176,10 @@ get_prompt(promptStatus_t status, ConditionalStack cstack)
 							strlcpy(buf, service_name, sizeof(buf));
 					}
 					break;
+					/* current search_path, or "?" if not reported by the server */
+				case 'S':
+					strlcpy(buf, session_search_path(), sizeof(buf));
+					break;
 					/* backend pid */
 				case 'p':
 					if (pset.db)

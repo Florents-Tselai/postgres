@@ -2705,3 +2705,16 @@ recognized_connection_string(const char *connstr)
 {
 	return uri_prefix_length(connstr) != 0 || strchr(connstr, '=') != NULL;
 }
+
+/* Return current search_path or "?" if unknown/not connected. */
+const char *
+session_search_path(void)
+{
+	const char *val;
+
+	if (!pset.db)
+		return "?";
+
+	val = PQparameterStatus(pset.db, "search_path");
+	return (val == NULL) ? "?" : val; /* empty "" is valid and returned as-is */
+}

@@ -4979,6 +4979,21 @@ testdb=&gt; <userinput>INSERT INTO my_table VALUES (:'content');</userinput>
         <listitem><para>The name of the service.</para></listitem>
       </varlistentry>
 
+     <varlistentry id="app-psql-prompting-S">
+      <term><literal>%S</literal></term>
+      <listitem>
+       <para>
+        The current <literal>search_path</literal>
+        (see <xref linkend="ddl-schemas-path"/>). If the connected server
+        does not report a <literal>search_path</literal> via
+        <literal>ParameterStatus</literal> (e.g., older servers), or the
+        session is not connected, a question mark (<literal>?</literal>)
+        is shown. Note that an empty string is a valid
+        <literal>search_path</literal> and will be displayed as empty.
+       </para>
+      </listitem>
+     </varlistentry>
+
       <varlistentry id="app-psql-prompting-slash">
         <term><literal>%/</literal></term>
         <listitem><para>The name of the current database.</para></listitem>
