@@ -4974,6 +4974,13 @@ testdb=&gt; <userinput>INSERT INTO my_table VALUES (:'content');</userinput>
         </listitem>
       </varlistentry>
 
+      <varlistentry id="app-psql-prompting-S">
+       <term><literal>%S</literal></term>
+       <listitem>
+        <para>The current <xref linkend="guc-search-path"/>.</para>
+       </listitem>
+      </varlistentry>
+
       <varlistentry id="app-psql-prompting-s">
         <term><literal>%s</literal></term>
         <listitem><para>The name of the service.</para></listitem>
