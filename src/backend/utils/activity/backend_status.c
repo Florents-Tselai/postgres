@@ -1346,3 +1346,27 @@ pgstat_clip_activity(const char *raw_activity)
 
 	return activity;
 }
+
+void
+pgstat_report_query_trace_info(const char *info)
+{
+	volatile PgBackendStatus *beentry = MyBEEntry;
+	int len;
+
+	if (!beentry)
+		return;
+
+	/* Clip to NAMEDATALEN-1 in multibyte-safe way */
+	if (info == NULL)
+		info = "";
+
+	len = pg_mbcliplen(info, strlen(info), NAMEDATALEN - 1);
+
+	/* Follow the same change-count protocol as appname */
+	PGSTAT_BEGIN_WRITE_ACTIVITY(beentry);
+
+	memcpy(beentry->st_query_trace_info, info, len);
+	beentry->st_query_trace_info[len] = '\0';
+
+	PGSTAT_END_WRITE_ACTIVITY(beentry);
+}

@@ -28,6 +28,8 @@
 extern bool check_application_name(char **newval, void **extra,
 								   GucSource source);
 extern void assign_application_name(const char *newval, void *extra);
+extern void assign_query_trace_info(const char *newval, void *extra);
+extern bool check_query_trace_info(char **newval, void **extra, GucSource source);
 extern const char *show_archive_command(void);
 extern bool check_autovacuum_work_mem(int *newval, void **extra,
 									  GucSource source);

@@ -83,6 +83,8 @@ char	   *GUC_check_errmsg_string;
 char	   *GUC_check_errdetail_string;
 char	   *GUC_check_errhint_string;
 
+char		*query_trace_info;
+
 
 /*
  * Unit conversion tables.

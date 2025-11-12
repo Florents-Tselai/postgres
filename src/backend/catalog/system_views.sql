@@ -920,7 +920,8 @@ CREATE VIEW pg_stat_activity AS
             S.backend_xmin,
             S.query_id,
             S.query,
-            S.backend_type
+            S.backend_type,
+            s.query_trace_info
     FROM pg_stat_get_activity(NULL) AS S
         LEFT JOIN pg_database AS D ON (S.datid = D.oid)
         LEFT JOIN pg_authid AS U ON (S.usesysid = U.oid);

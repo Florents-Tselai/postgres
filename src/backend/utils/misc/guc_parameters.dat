@@ -2284,6 +2284,19 @@
   check_hook => 'check_primary_slot_name',
 },
 
+{
+  name       => 'query_trace_info',
+  type       => 'string',
+  context    => 'PGC_USERSET',
+  group      => 'CLIENT_CONN_OTHER',
+  short_desc => 'Sets per-session trace metadata exposed in pg_stat_activity.',
+  flags      => 'GUC_REPORT | GUC_NOT_IN_SAMPLE',
+  variable   => 'query_trace_info',
+  boot_val   => '""',
+  check_hook => 'check_query_trace_info',
+  assign_hook=> 'assign_query_trace_info',
+},
+
 { name => 'quote_all_identifiers', type => 'bool', context => 'PGC_USERSET', group => 'COMPAT_OPTIONS_PREVIOUS',
   short_desc => 'When generating SQL fragments, quote all identifiers.',
   variable => 'quote_all_identifiers',

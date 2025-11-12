@@ -1257,3 +1257,68 @@ check_ssl(bool *newval, void **extra, GucSource source)
 #endif
 	return true;
 }
+
+#include "postgres.h"
+#include "utils/guc.h"
+#include "utils/elog.h"
+#include "utils/pgstat_internal.h"   /* or wherever you declared pgstat_report_query_trace_info */
+#include <ctype.h>
+
+/*
+ * Validate and possibly modify *newval.
+ * - Reject control chars (except TAB, matching app name behavior closely enough).
+ * - Truncate to NAMEDATALEN-1 bytes (with a WARNING), because we store
+ *   into fixed-size char arrays in PGPROC/PgBackendStatus.
+ *
+ * You may freely modify *newval here; GUC machinery will use the replaced
+ * pointer and free the original as needed.
+ */
+bool
+check_query_trace_info(char **newval, void **extra, GucSource source)
+{
+	if (newval == NULL || *newval == NULL)
+		return true; /* NULL is allowed; treat as empty later in assign */
+
+	/* Disallow control characters (keep TAB if you want to be lenient) */
+	for (const unsigned char *p = (const unsigned char *) *newval; *p; p++)
+	{
+		if (iscntrl(*p) && *p != '\t')
+		{
+			// ereport(GUC_complaint_elevel(source),
+			// 		(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+			// 		 errmsg("query_trace_info may not contain control characters")));
+			return false;
+		}
+	}
+
+	/* Truncate to fit the fixed-size storage if necessary */
+	size_t len = strlen(*newval);
+	if (len >= NAMEDATALEN)
+	{
+		char *trunc = pstrdup(*newval);
+		trunc[NAMEDATALEN - 1] = '\0';
+
+		/* Replace the incoming value with the truncated one */
+		*newval = trunc;
+
+		/* Emit a warning (not an error), just like application_name does */
+		ereport(WARNING,
+				(errmsg("query_trace_info is too long, will be truncated to %d bytes",
+						NAMEDATALEN - 1)));
+	}
+
+	/* We don't need extra; set to NULL explicitly */
+	*extra = NULL;
+	return true;
+}
+
+/*
+ * Assign hook: reflect the (already committed) new value into backend stats
+ * so it's visible immediately in pg_stat_activity.
+ */
+void
+assign_query_trace_info(const char *newval, void *extra)
+{
+	/* newval can be NULL when RESET is used; report empty string then */
+	pgstat_report_query_trace_info(newval ? newval : "");
+}

@@ -315,6 +315,7 @@ extern PGDLLIMPORT char *IdentFileName;
 extern PGDLLIMPORT char *external_pid_file;
 
 extern PGDLLIMPORT char *application_name;
+extern PGDLLIMPORT char	*query_trace_info;
 
 extern PGDLLIMPORT int tcp_keepalives_idle;
 extern PGDLLIMPORT int tcp_keepalives_interval;
