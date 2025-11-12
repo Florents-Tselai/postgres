@@ -1276,6 +1276,8 @@ check_ssl(bool *newval, void **extra, GucSource source)
 bool
 check_query_trace_info(char **newval, void **extra, GucSource source)
 {
+	size_t len;
+
 	if (newval == NULL || *newval == NULL)
 		return true; /* NULL is allowed; treat as empty later in assign */
 
@@ -1292,7 +1294,7 @@ check_query_trace_info(char **newval, void **extra, GucSource source)
 	}
 
 	/* Truncate to fit the fixed-size storage if necessary */
-	size_t len = strlen(*newval);
+	len = strlen(*newval);
 	if (len >= NAMEDATALEN)
 	{
 		char *trunc = pstrdup(*newval);
