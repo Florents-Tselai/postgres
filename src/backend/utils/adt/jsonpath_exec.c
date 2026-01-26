@@ -123,6 +123,12 @@ typedef struct JsonLikeRegexContext
 	int			cflags;
 } JsonLikeRegexContext;
 
+typedef struct JsonTsMatchContext
+{
+	text	   *vec;
+	Oid			tsCfg_id;
+}			JsonTsMatchContext;
+
 /* Result of jsonpath predicate evaluation */
 typedef enum JsonPathBool
 {
@@ -306,6 +312,7 @@ static JsonPathExecResult executeKeyValueMethod(JsonPathExecContext *cxt,
 												JsonPathItem *jsp, JsonbValue *jb, JsonValueList *found);
 static JsonPathExecResult appendBoolResult(JsonPathExecContext *cxt,
 										   JsonPathItem *jsp, JsonValueList *found, JsonPathBool res);
+static JsonPathBool executeTsMatch(JsonPathItem *jsp, JsonbValue *str, JsonbValue *rarg, void *param);
 static void getJsonPathItem(JsonPathExecContext *cxt, JsonPathItem *item,
 							JsonbValue *value);
 static JsonbValue *GetJsonPathVar(void *cxt, char *varName, int varNameLen,
@@ -800,6 +807,7 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 		case jpiExists:
 		case jpiStartsWith:
 		case jpiLikeRegex:
+		case jpiTsMatch:
 			{
 				JsonPathBool st = executeBoolItem(cxt, jsp, jb, true);
 
@@ -1868,6 +1876,16 @@ executeBoolItem(JsonPathExecContext *cxt, JsonPathItem *jsp,
 				return executePredicate(cxt, jsp, &larg, NULL, jb, false,
 										executeLikeRegex, &lrcxt);
 			}
+		case jpiTsMatch:
+			{
+				JsonTsMatchContext lrcxt = {0};
+
+				jspInitByBuffer(&larg, jsp->base,
+								jsp->content.tsmatch.doc);
+
+				return executePredicate(cxt, jsp, &larg, NULL, jb, false,
+										executeTsMatch, &lrcxt);
+			}
 
 		case jpiExists:
 			jspGetArg(jsp, &larg);
@@ -1899,7 +1917,6 @@ executeBoolItem(JsonPathExecContext *cxt, JsonPathItem *jsp,
 
 				return res == jperOk ? jpbTrue : jpbFalse;
 			}
-
 		default:
 			elog(ERROR, "invalid boolean jsonpath item type: %d", jsp->type);
 			return jpbUnknown;
@@ -2922,6 +2939,75 @@ executeKeyValueMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
 
 	return res;
 }
+#include "tsearch/ts_utils.h"
+#include "tsearch/ts_cache.h"
+#include "utils/regproc.h"
+#include "catalog/namespace.h"
+
+static JsonPathBool
+executeTsMatch(JsonPathItem *jsp, JsonbValue *str, JsonbValue *rarg,
+			   void *param)
+{
+	JsonTsMatchContext *cxt = param;
+	text	   *doc;
+	Datum		tsquery;
+	Datum		tsvector;
+	bool		match;
+
+	if (!(str = getScalar(str, jbvString)))
+		return jpbUnknown;
+
+	/* Setup the Context (Run only once per predicate) */
+	if (!cxt->vec)
+	{
+		/* Cache the tsquery */
+		cxt->vec = cstring_to_text_with_len(jsp->content.tsmatch.tsquery,
+											jsp->content.tsmatch.tsquerylen);
+
+		/* Resolve the tsconfig OID from the offset */
+		if (jsp->content.tsmatch.tsconfig != 0)
+		{
+			JsonPathItem config_item;
+			int32		config_len;
+			char	   *config_str;
+
+			jspInitByBuffer(&config_item, jsp->base, jsp->content.tsmatch.tsconfig);
+			config_str = jspGetString(&config_item, &config_len);;
+
+			cxt->tsCfg_id = get_ts_config_oid(stringToQualifiedNameList(config_str, NULL), true);
+		}
+		else
+		{
+			cxt->tsCfg_id = getTSCurrentConfig(true);
+		}
+	}
+
+	/*
+	 * elog(NOTICE, "ts_config=[%s] cfgId=[%u] vector=[%.*s] query=[%s]",
+	 * config_name, cxt->cfgId, str->val.string.len, str->val.string.val,
+	 * jsp->content.tsmatch.query);
+	 */
+
+
+	doc = cstring_to_text_with_len(str->val.string.val,
+								   str->val.string.len);
+
+	tsvector = DirectFunctionCall2(to_tsvector_byid,
+								   ObjectIdGetDatum(cxt->tsCfg_id),
+								   PointerGetDatum(doc));
+
+	tsquery = DirectFunctionCall2(plainto_tsquery_byid,
+								  ObjectIdGetDatum(cxt->tsCfg_id),
+								  PointerGetDatum(cxt->vec));
+
+
+	match = DatumGetBool(DirectFunctionCall2(ts_match_vq,
+											 tsvector,
+											 tsquery));
+
+	return match ? jpbTrue : jpbFalse;
+}
+
 
 /*
  * Convert boolean execution status 'res' to a boolean JSON item and execute
