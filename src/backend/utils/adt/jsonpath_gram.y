@@ -43,7 +43,12 @@ static bool makeItemLikeRegex(JsonPathParseItem *expr,
 							  JsonPathString *flags,
 							  JsonPathParseItem ** result,
 							  struct Node *escontext);
-
+static bool makeItemTsMatch(JsonPathParseItem *doc,
+							  JsonPathString *tsquery,
+							  JsonPathString *tsconfig,
+							  JsonPathString *tsquery_parser,
+							  JsonPathParseItem ** result,
+							  struct Node *escontext);
 /*
  * Bison doesn't allocate anything that needs to live across parser calls,
  * so we can easily have it use palloc instead of malloc.  This prevents
@@ -81,7 +86,7 @@ static bool makeItemLikeRegex(JsonPathParseItem *expr,
 %token	<str>		IDENT_P STRING_P NUMERIC_P INT_P VARIABLE_P
 %token	<str>		OR_P AND_P NOT_P
 %token	<str>		LESS_P LESSEQUAL_P EQUAL_P NOTEQUAL_P GREATEREQUAL_P GREATER_P
-%token	<str>		ANY_P STRICT_P LAX_P LAST_P STARTS_P WITH_P LIKE_REGEX_P FLAG_P
+%token	<str>		ANY_P STRICT_P LAX_P LAST_P STARTS_P WITH_P LIKE_REGEX_P FLAG_P TSMATCH_P TSCONFIG_P TSQUERYPARSER_P
 %token	<str>		ABS_P SIZE_P TYPE_P FLOOR_P DOUBLE_P CEILING_P KEYVALUE_P
 %token	<str>		DATETIME_P
 %token	<str>		BIGINT_P BOOLEAN_P DATE_P DECIMAL_P INTEGER_P NUMBER_P
@@ -185,6 +190,37 @@ predicate:
 		JsonPathParseItem *jppitem;
 		if (! makeItemLikeRegex($1, &$3, &$5, &jppitem, escontext))
 			YYABORT;
+		$$ = jppitem;
+	}
+	| expr TSMATCH_P STRING_P
+	{
+		JsonPathParseItem *jppitem;
+		/* Pass NULL for tsconfig (3rd) and NULL for tsquery_parser (4th) */
+		if (! makeItemTsMatch($1, &$3, NULL, NULL, &jppitem, escontext))
+		   YYABORT;
+		$$ = jppitem;
+	}
+	| expr TSMATCH_P STRING_P TSCONFIG_P STRING_P
+	{
+		JsonPathParseItem *jppitem;
+		/* Pass NULL for tsquery_parser (4th) */
+		if (! makeItemTsMatch($1, &$3, &$5, NULL, &jppitem, escontext))
+		   YYABORT;
+		$$ = jppitem;
+	}
+	| expr TSMATCH_P STRING_P TSQUERYPARSER_P STRING_P
+	{
+		JsonPathParseItem *jppitem;
+		/* Pass NULL for tsconfig (3rd) */
+		if (! makeItemTsMatch($1, &$3, NULL, &$5, &jppitem, escontext))
+		   YYABORT;
+		$$ = jppitem;
+	}
+	| expr TSMATCH_P STRING_P TSCONFIG_P STRING_P TSQUERYPARSER_P STRING_P
+	{
+		JsonPathParseItem *jppitem;
+		if (! makeItemTsMatch($1, &$3, &$5, &$7, &jppitem, escontext))
+		   YYABORT;
 		$$ = jppitem;
 	}
 	;
@@ -357,6 +393,9 @@ key_name:
 	| TIME_TZ_P
 	| TIMESTAMP_P
 	| TIMESTAMP_TZ_P
+	| TSCONFIG_P
+	| TSMATCH_P
+	| TSQUERYPARSER_P
 	;
 
 method:
@@ -682,4 +721,60 @@ jspConvertRegexFlags(uint32 xflags, int *result, struct Node *escontext)
 	*result = cflags;
 
 	return true;
+}
+
+static bool
+makeItemTsMatch(JsonPathParseItem *doc,
+             JsonPathString *tsquery,
+             JsonPathString *tsconfig,
+             JsonPathString *tsquery_parser,
+             JsonPathParseItem **result,
+             struct Node *escontext)
+{
+    JsonPathParseItem *v = makeItemType(jpiTsMatch);
+
+    v->value.tsmatch.doc = doc;
+
+    v->value.tsmatch.tsquery = tsquery->val;
+    v->value.tsmatch.tsquerylen = tsquery->len;
+
+    /* Handle the Configuration (Stored as a Node) */
+    if (tsconfig)
+    {
+       JsonPathParseItem *conf = makeItemType(jpiString);
+       conf->value.string.val = tsconfig->val;
+       conf->value.string.len = tsconfig->len;
+       v->value.tsmatch.tsconfig = conf;
+    }
+    else
+    {
+       v->value.tsmatch.tsconfig = NULL;
+    }
+
+    /* Handle the TSQuery Parser Flag */
+    if (tsquery_parser)
+    {
+        /* Check for "pl", "ph", "w" here to throw a syntax error immediately */
+        if (pg_strncasecmp(tsquery_parser->val, "pl", tsquery_parser->len) != 0 &&
+            pg_strncasecmp(tsquery_parser->val, "ph", tsquery_parser->len) != 0 &&
+            pg_strncasecmp(tsquery_parser->val, "w",  tsquery_parser->len) != 0)
+        {
+             ereport(ERROR,
+                     (errcode(ERRCODE_SYNTAX_ERROR),
+                      errmsg("invalid tsquery_parser value: \"%s\"", tsquery_parser->val),
+                      errhint("Valid values are \"pl\", \"ph\", and \"w\".")));
+        }
+
+        v->value.tsmatch.tsqparser = tsquery_parser->val;
+        v->value.tsmatch.tsqparser_len = tsquery_parser->len;
+    }
+    else
+    {
+        v->value.tsmatch.tsqparser = NULL;
+        v->value.tsmatch.tsqparser_len = 0;
+    }
+
+    /* Success */
+    *result = v;
+    return true;
 }
