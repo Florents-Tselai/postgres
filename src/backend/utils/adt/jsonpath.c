@@ -349,6 +349,66 @@ flattenJsonPathParseItem(StringInfo buf, int *result, struct Node *escontext,
 				*(int32 *) (buf->data + offs) = chld - pos;
 			}
 			break;
+		case jpiTsMatch:
+			{
+				int32		expr_off;
+				int32		tsconfig_off;
+
+				/* Reserve slots for child node offsets */
+				expr_off = reserveSpaceForItemPointer(buf);
+				tsconfig_off = reserveSpaceForItemPointer(buf);
+
+				/* Write the Main Query String */
+				appendBinaryStringInfo(buf,
+									   &item->value.tsmatch.tsquerylen,
+									   sizeof(item->value.tsmatch.tsquerylen));
+				appendBinaryStringInfo(buf,
+									   item->value.tsmatch.tsquery,
+									   item->value.tsmatch.tsquerylen);
+				appendStringInfoChar(buf, '\0');
+
+				/* Write the Parser Flag */
+				if (item->value.tsmatch.tsqparser)
+				{
+					appendBinaryStringInfo(buf,
+										   &item->value.tsmatch.tsqparser_len,
+										   sizeof(item->value.tsmatch.tsqparser_len));
+					appendBinaryStringInfo(buf,
+										   item->value.tsmatch.tsqparser,
+										   item->value.tsmatch.tsqparser_len);
+					appendStringInfoChar(buf, '\0');
+				}
+				else
+				{
+					uint32		zero = 0;
+
+					appendBinaryStringInfo(buf, &zero, sizeof(uint32));
+					appendStringInfoChar(buf, '\0');
+				}
+
+				if (!flattenJsonPathParseItem(buf, &chld, escontext,
+											  item->value.tsmatch.doc,
+											  nestingLevel,
+											  insideArraySubscript))
+					return false;
+				*(int32 *) (buf->data + expr_off) = chld - pos;
+
+				/* TSConfig (Optional) */
+				if (item->value.tsmatch.tsconfig)
+				{
+					if (!flattenJsonPathParseItem(buf, &chld, escontext,
+												  item->value.tsmatch.tsconfig,
+												  nestingLevel,
+												  insideArraySubscript))
+						return false;
+					*(int32 *) (buf->data + tsconfig_off) = chld - pos;
+				}
+				else
+				{
+					*(int32 *) (buf->data + tsconfig_off) = 0;
+				}
+			}
+			break;
 		case jpiFilter:
 			argNestingLevel++;
 			/* FALLTHROUGH */
@@ -762,6 +822,58 @@ printJsonPathItem(StringInfo buf, JsonPathItem *v, bool inKey,
 			if (printBracketes)
 				appendStringInfoChar(buf, ')');
 			break;
+		case jpiTsMatch:
+			if (printBracketes)
+				appendStringInfoChar(buf, '(');
+
+			jspInitByBuffer(&elem, v->base, v->content.tsmatch.doc);
+			printJsonPathItem(buf, &elem, false,
+							  operationPriority(elem.type) <=
+							  operationPriority(v->type));
+
+			appendStringInfoString(buf, " tsmatch ");
+
+			escape_json_with_len(buf,
+								 v->content.tsmatch.tsquery,
+								 v->content.tsmatch.tsquerylen);
+
+			/* Print TSConfig if present */
+			if (v->content.tsmatch.tsconfig)
+			{
+				JsonPathItem config_item;
+				int32		config_len;
+				char	   *config_str;
+
+				appendStringInfoString(buf, " tsconfig ");
+				jspInitByBuffer(&config_item, v->base, v->content.tsmatch.tsconfig);
+				config_str = jspGetString(&config_item, &config_len);
+				appendStringInfoChar(buf, '"');
+				appendBinaryStringInfo(buf, config_str, config_len);
+				appendStringInfoChar(buf, '"');
+			}
+
+			if (v->content.tsmatch.tsqparser_len > 0)
+			{
+				appendStringInfoString(buf, " tsqparser ");
+				appendStringInfoChar(buf, '"');
+
+				/*
+				 * Use simple binary append since flags like "pl" don't need
+				 * JSON escaping
+				 */
+				appendBinaryStringInfo(buf,
+									   v->content.tsmatch.tsqparser,
+									   v->content.tsmatch.tsqparser_len);
+				appendStringInfoChar(buf, '"');
+			}
+
+			if (printBracketes)
+				appendStringInfoChar(buf, ')');
+			break;
+
+			if (printBracketes)
+				appendStringInfoChar(buf, ')');
+			break;
 		case jpiBigint:
 			appendStringInfoString(buf, ".bigint()");
 			break;
@@ -914,6 +1026,8 @@ jspOperationName(JsonPathItemType type)
 			return "timestamp";
 		case jpiTimestampTz:
 			return "timestamp_tz";
+		case jpiTsMatch:
+			return "tsmatch";
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", type);
 			return NULL;
@@ -1072,6 +1186,21 @@ jspInitByBuffer(JsonPathItem *v, char *base, int32 pos)
 			read_int32(v->content.like_regex.patternlen, base, pos);
 			v->content.like_regex.pattern = base + pos;
 			break;
+		case jpiTsMatch:
+			read_int32(v->content.tsmatch.doc, base, pos);
+			read_int32(v->content.tsmatch.tsconfig, base, pos);
+
+			/* Read Query String */
+			read_int32(v->content.tsmatch.tsquerylen, base, pos);
+			v->content.tsmatch.tsquery = base + pos;
+			/* Skip past query string + null terminator */
+			pos += v->content.tsmatch.tsquerylen + 1;
+
+			/* Read Parser Flag */
+			read_int32(v->content.tsmatch.tsqparser_len, base, pos);
+			v->content.tsmatch.tsqparser = base + pos;
+			pos += v->content.tsmatch.tsqparser_len + 1;
+			break;
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", v->type);
 	}
@@ -1142,6 +1271,7 @@ jspGetNext(JsonPathItem *v, JsonPathItem *a)
 			   v->type == jpiLast ||
 			   v->type == jpiStartsWith ||
 			   v->type == jpiLikeRegex ||
+			   v->type == jpiTsMatch ||
 			   v->type == jpiBigint ||
 			   v->type == jpiBoolean ||
 			   v->type == jpiDate ||
@@ -1474,7 +1604,11 @@ jspIsMutableWalker(JsonPathItem *jpi, struct JsonPathMutableContext *cxt)
 				jspInitByBuffer(&arg, jpi->base, jpi->content.like_regex.expr);
 				jspIsMutableWalker(&arg, cxt);
 				break;
-
+			case jpiTsMatch:
+				Assert(status == jpdsNonDateTime);
+				jspInitByBuffer(&arg, jpi->base, jpi->content.tsmatch.doc);
+				jspIsMutableWalker(&arg, cxt);
+				break;
 				/* literals */
 			case jpiNull:
 			case jpiString:

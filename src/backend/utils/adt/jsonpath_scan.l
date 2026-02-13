@@ -427,10 +427,13 @@ static const JsonPathKeyword keywords[] = {
 	{7, false, DECIMAL_P, "decimal"},
 	{7, false, INTEGER_P, "integer"},
 	{7, false, TIME_TZ_P, "time_tz"},
+	{7, false, TSMATCH_P, "tsmatch"},
 	{7, false, UNKNOWN_P, "unknown"},
 	{8, false, DATETIME_P, "datetime"},
 	{8, false, KEYVALUE_P, "keyvalue"},
+	{8, false, TSCONFIG_P, "tsconfig"},
 	{9, false, TIMESTAMP_P, "timestamp"},
+	{9, false, TSQUERYPARSER_P, "tsqparser"},
 	{10, false, LIKE_REGEX_P, "like_regex"},
 	{12, false, TIMESTAMP_TZ_P, "timestamp_tz"},
 };

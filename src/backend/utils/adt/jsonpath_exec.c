@@ -123,6 +123,13 @@ typedef struct JsonLikeRegexContext
 	int			cflags;
 } JsonLikeRegexContext;
 
+typedef struct JsonTsMatchContext
+{
+	Datum		queryDatum;		/* Cache the compiled binary TSQuery */
+	Oid			tsconfigId;		/* Cache the dictionary OID */
+	bool		initialized;	/* Flag to run setup only once */
+}			JsonTsMatchContext;
+
 /* Result of jsonpath predicate evaluation */
 typedef enum JsonPathBool
 {
@@ -306,6 +313,7 @@ static JsonPathExecResult executeKeyValueMethod(JsonPathExecContext *cxt,
 												JsonPathItem *jsp, JsonbValue *jb, JsonValueList *found);
 static JsonPathExecResult appendBoolResult(JsonPathExecContext *cxt,
 										   JsonPathItem *jsp, JsonValueList *found, JsonPathBool res);
+static JsonPathBool executeTsMatch(JsonPathItem *jsp, JsonbValue *str, JsonbValue *rarg, void *param);
 static void getJsonPathItem(JsonPathExecContext *cxt, JsonPathItem *item,
 							JsonbValue *value);
 static JsonbValue *GetJsonPathVar(void *cxt, char *varName, int varNameLen,
@@ -800,6 +808,7 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 		case jpiExists:
 		case jpiStartsWith:
 		case jpiLikeRegex:
+		case jpiTsMatch:
 			{
 				JsonPathBool st = executeBoolItem(cxt, jsp, jb, true);
 
@@ -1868,6 +1877,16 @@ executeBoolItem(JsonPathExecContext *cxt, JsonPathItem *jsp,
 				return executePredicate(cxt, jsp, &larg, NULL, jb, false,
 										executeLikeRegex, &lrcxt);
 			}
+		case jpiTsMatch:
+			{
+				JsonTsMatchContext lrcxt = {0};
+
+				jspInitByBuffer(&larg, jsp->base,
+								jsp->content.tsmatch.doc);
+
+				return executePredicate(cxt, jsp, &larg, NULL, jb, false,
+										executeTsMatch, &lrcxt);
+			}
 
 		case jpiExists:
 			jspGetArg(jsp, &larg);
@@ -1899,7 +1918,6 @@ executeBoolItem(JsonPathExecContext *cxt, JsonPathItem *jsp,
 
 				return res == jperOk ? jpbTrue : jpbFalse;
 			}
-
 		default:
 			elog(ERROR, "invalid boolean jsonpath item type: %d", jsp->type);
 			return jpbUnknown;
@@ -2922,6 +2940,116 @@ executeKeyValueMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
 
 	return res;
 }
+#include "tsearch/ts_utils.h"
+#include "tsearch/ts_cache.h"
+#include "utils/regproc.h"
+#include "catalog/namespace.h"
+
+static JsonPathBool
+executeTsMatch(JsonPathItem *jsp, JsonbValue *str, JsonbValue *rarg,
+			   void *param)
+{
+	JsonTsMatchContext *cxt = param;
+	text	   *doc_text;
+	Datum		tsvector_datum;
+	bool		match;
+
+	if (!(str = getScalar(str, jbvString)))
+		return jpbUnknown;
+
+	/* Setup Context (Run ONLY once per predicate) */
+	if (!cxt->initialized)
+	{
+		text	   *query_text;
+		char	   *parser_mode;
+		uint32		parser_len;
+
+		if (jsp->content.tsmatch.tsconfig != 0)
+		{
+			JsonPathItem config_item;
+			int32		config_len;
+			char	   *config_str;
+
+			jspInitByBuffer(&config_item, jsp->base, jsp->content.tsmatch.tsconfig);
+			config_str = jspGetString(&config_item, &config_len);
+
+			cxt->tsconfigId = get_ts_config_oid(stringToQualifiedNameList(config_str, NULL), true);
+		}
+		else
+		{
+			cxt->tsconfigId = getTSCurrentConfig(true);
+		}
+
+		/* Prepare Query Text */
+		query_text = cstring_to_text_with_len(jsp->content.tsmatch.tsquery,
+											  jsp->content.tsmatch.tsquerylen);
+
+		/* Select Parser and Compile Query */
+		parser_mode = jsp->content.tsmatch.tsqparser;
+		parser_len = jsp->content.tsmatch.tsqparser_len;
+
+		if (parser_len > 0)
+		{
+			/* Dispatch based on flag */
+			if (pg_strncasecmp(parser_mode, "pl", parser_len) == 0)
+			{
+				cxt->queryDatum = DirectFunctionCall2(plainto_tsquery_byid,
+													  ObjectIdGetDatum(cxt->tsconfigId),
+													  PointerGetDatum(query_text));
+			}
+			else if (pg_strncasecmp(parser_mode, "ph", parser_len) == 0)
+			{
+				cxt->queryDatum = DirectFunctionCall2(phraseto_tsquery_byid,
+													  ObjectIdGetDatum(cxt->tsconfigId),
+													  PointerGetDatum(query_text));
+			}
+			else if (pg_strncasecmp(parser_mode, "w", parser_len) == 0)
+			{
+				cxt->queryDatum = DirectFunctionCall2(websearch_to_tsquery_byid,
+													  ObjectIdGetDatum(cxt->tsconfigId),
+													  PointerGetDatum(query_text));
+			}
+			else
+			{
+				/*
+				 * Fallback or Error for unknown flags (should be caught by
+				 * parser)
+				 */
+				ereport(ERROR,
+						(errcode(ERRCODE_SYNTAX_ERROR),
+						 errmsg("unrecognized tsqparser flag")));
+			}
+		}
+		else
+		{
+			/*
+			 * Default: to_tsquery (Standard Mode) Note: This expects
+			 * operators like '&' or '|' in the query string
+			 */
+			cxt->queryDatum = DirectFunctionCall2(to_tsquery_byid,
+												  ObjectIdGetDatum(cxt->tsconfigId),
+												  PointerGetDatum(query_text));
+		}
+
+		cxt->initialized = true;
+	}
+
+	/* Runtime: Convert Doc to Vector and Match */
+
+	doc_text = cstring_to_text_with_len(str->val.string.val,
+										str->val.string.len);
+
+	tsvector_datum = DirectFunctionCall2(to_tsvector_byid,
+										 ObjectIdGetDatum(cxt->tsconfigId),
+										 PointerGetDatum(doc_text));
+
+	match = DatumGetBool(DirectFunctionCall2(ts_match_vq,
+											 tsvector_datum,
+											 cxt->queryDatum));
+
+	return match ? jpbTrue : jpbFalse;
+}
+
 
 /*
  * Convert boolean execution status 'res' to a boolean JSON item and execute
