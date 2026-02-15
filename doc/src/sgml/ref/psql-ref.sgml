@@ -5010,6 +5010,11 @@ testdb=&gt; <userinput>INSERT INTO my_table VALUES (:'content');</userinput>
         <listitem><para>The name of the service.</para></listitem>
       </varlistentry>
 
+     <varlistentry id="app-psql-prompting-S">
+      <term><literal>%S</literal></term>
+      <listitem><para>The current search path.</para></listitem>
+     </varlistentry>
+
       <varlistentry id="app-psql-prompting-slash">
         <term><literal>%/</literal></term>
         <listitem><para>The name of the current database.</para></listitem>
