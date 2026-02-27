@@ -285,6 +285,41 @@ get_extension_schema(Oid ext_oid)
 	return result;
 }
 
+/* TupleDesc for an extension-defined type */
+TupleDesc get_extension_type_tupledesc(const char *extname, const char *typname)
+{
+	Oid extoid = get_extension_oid(extname, true);
+	Oid extschemaoid;
+	Oid typoid;
+
+	if ( ! OidIsValid(extoid) )
+		elog(ERROR, "could not lookup '%s' extension oid", extname);
+
+	extschemaoid = get_extension_schema(extoid);
+
+#if PG_VERSION_NUM >= 120000
+	typoid = GetSysCacheOid2(TYPENAMENSP, Anum_pg_type_oid,
+				   PointerGetDatum(typname),
+				   ObjectIdGetDatum(extschemaoid));
+#else
+	typoid = GetSysCacheOid2(TYPENAMENSP,
+				   PointerGetDatum(typname),
+				   ObjectIdGetDatum(extschemaoid));
+#endif
+
+	if ( OidIsValid(typoid) )
+	{
+		// Oid typ_oid = get_typ_typrelid(rel_oid);
+		Oid relextoid = getExtensionOfObject(TypeRelationId, typoid);
+		if ( relextoid == extoid )
+		{
+			return TypeGetTupleDesc(typoid, NIL);
+		}
+	}
+
+	elog(ERROR, "could not lookup '%s' tuple desc", typname);
+}
+
 /*
  * get_function_sibling_type - find a type belonging to same extension as func
  *
