@@ -352,64 +352,50 @@ flattenJsonPathParseItem(StringInfo buf, int *result, struct Node *escontext,
 			}
 			break;
 		case jpiTsMatch:
+		{
+			int32     expr_off;
+			int32     tsconfig_off;
+			uint32    tsqparser_len_val = item->value.tsmatch.tsqparser ? item->value.tsmatch.tsqparser_len : 0;
+
+			expr_off = reserveSpaceForItemPointer(buf);
+			tsconfig_off = reserveSpaceForItemPointer(buf);
+
+			/* Write all integers FIRST so they are naturally 4-byte aligned */
+			appendBinaryStringInfo(buf, &item->value.tsmatch.tsquery_len, sizeof(uint32));
+			appendBinaryStringInfo(buf, &tsqparser_len_val, sizeof(uint32));
+
+			/* Now append the strings at the end */
+			appendBinaryStringInfo(buf, item->value.tsmatch.tsquery, item->value.tsmatch.tsquery_len);
+			appendStringInfoChar(buf, '\0');
+
+			if (item->value.tsmatch.tsqparser)
 			{
-				int32		expr_off;
-				int32		tsconfig_off;
-
-				/* Reserve slots for child node offsets */
-				expr_off = reserveSpaceForItemPointer(buf);
-				tsconfig_off = reserveSpaceForItemPointer(buf);
-
-				/* Write the Main Query String */
-				appendBinaryStringInfo(buf,
-									   &item->value.tsmatch.tsquery_len,
-									   sizeof(item->value.tsmatch.tsquery_len));
-				appendBinaryStringInfo(buf,
-									   item->value.tsmatch.tsquery,
-									   item->value.tsmatch.tsquery_len);
+				appendBinaryStringInfo(buf, item->value.tsmatch.tsqparser, tsqparser_len_val);
 				appendStringInfoChar(buf, '\0');
-
-				/* Write the Parser Flag */
-				if (item->value.tsmatch.tsqparser)
-				{
-					appendBinaryStringInfo(buf,
-										   &item->value.tsmatch.tsqparser_len,
-										   sizeof(item->value.tsmatch.tsqparser_len));
-					appendBinaryStringInfo(buf,
-										   item->value.tsmatch.tsqparser,
-										   item->value.tsmatch.tsqparser_len);
-					appendStringInfoChar(buf, '\0');
-				}
-				else
-				{
-					uint32		zero = 0;
-
-					appendBinaryStringInfo(buf, &zero, sizeof(uint32));
-					appendStringInfoChar(buf, '\0');
-				}
-
-				if (!flattenJsonPathParseItem(buf, &chld, escontext,
-											  item->value.tsmatch.doc,
-											  nestingLevel,
-											  insideArraySubscript))
-					return false;
-				*(int32 *) (buf->data + expr_off) = chld - pos;
-
-				/* TSConfig (Optional) */
-				if (item->value.tsmatch.tsconfig)
-				{
-					if (!flattenJsonPathParseItem(buf, &chld, escontext,
-												  item->value.tsmatch.tsconfig,
-												  nestingLevel,
-												  insideArraySubscript))
-						return false;
-					*(int32 *) (buf->data + tsconfig_off) = chld - pos;
-				}
-				else
-				{
-					*(int32 *) (buf->data + tsconfig_off) = 0;
-				}
 			}
+
+			if (!flattenJsonPathParseItem(buf, &chld, escontext,
+								   item->value.tsmatch.doc,
+								   nestingLevel,
+								   insideArraySubscript))
+				return false;
+			*(int32 *) (buf->data + expr_off) = chld - pos;
+
+			/* TSConfig (Optional) */
+			if (item->value.tsmatch.tsconfig)
+			{
+				if (!flattenJsonPathParseItem(buf, &chld, escontext,
+									   item->value.tsmatch.tsconfig,
+									   nestingLevel,
+									   insideArraySubscript))
+					return false;
+				*(int32 *) (buf->data + tsconfig_off) = chld - pos;
+			}
+			else
+			{
+				*(int32 *) (buf->data + tsconfig_off) = 0;
+			}
+		}
 			break;
 		case jpiFilter:
 			argNestingLevel++;
@@ -1273,19 +1259,25 @@ jspInitByBuffer(JsonPathItem *v, char *base, int32 pos)
 			v->content.like_regex.pattern = base + pos;
 			break;
 		case jpiTsMatch:
+			/* FIX: Read all integers first */
 			read_int32(v->content.tsmatch.doc, base, pos);
 			read_int32(v->content.tsmatch.tsconfig, base, pos);
-
-			/* Read Query String */
 			read_int32(v->content.tsmatch.tsquery_len, base, pos);
+			read_int32(v->content.tsmatch.tsqparser_len, base, pos);
+
+			/* Set pointers to the strings in the buffer */
 			v->content.tsmatch.tsquery = base + pos;
-			/* Skip past query string + null terminator */
 			pos += v->content.tsmatch.tsquery_len + 1;
 
-			/* Read Parser Flag */
-			read_int32(v->content.tsmatch.tsqparser_len, base, pos);
-			v->content.tsmatch.tsqparser = base + pos;
-			pos += v->content.tsmatch.tsqparser_len + 1;
+			if (v->content.tsmatch.tsqparser_len > 0)
+			{
+				v->content.tsmatch.tsqparser = base + pos;
+				pos += v->content.tsmatch.tsqparser_len + 1;
+			}
+			else
+			{
+				v->content.tsmatch.tsqparser = NULL;
+			}
 			break;
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", v->type);
