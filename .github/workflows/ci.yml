@@ -1,0 +1,1185 @@
+# GitHub Actions CI configuration for PostgreSQL
+#
+# Migrated from .cirrus.tasks.yml (Cirrus CI).
+#
+# For instructions on how to enable the CI integration in a repository and
+# further details, see src/tools/ci/README
+#
+# Tasks intentionally test with different, non-default, configurations,
+# to increase the chance of catching problems. Each job with non-obvious
+# non-default settings documents their oddity at the top of the job,
+# prefixed by "SPECIAL:".
+#
+# ci-os-only: support
+# ~~~~~~~~~~~~~~~~~~~~
+# Commit messages can contain "ci-os-only: <os>[,<os>...]" on its own line
+# to restrict which OS jobs run. Recognised tokens:
+#   linux, freebsd, netbsd, openbsd, macos/darwin/osx, windows, mingw,
+#   compilerwarnings
+# When the tag is absent every job runs (subject to the schedule triggers
+# for the less-common BSDs).
+
+name: PostgreSQL CI
+
+on:
+  push:
+    branches: [master, 'REL_*_STABLE']
+  pull_request:
+  # NetBSD / OpenBSD were trigger_type gated in Cirrus (not every push).
+  # Run them on a schedule instead.
+  schedule:
+    - cron: '0 2 * * 0' # weekly, Sunday 02:00 UTC
+  workflow_dispatch:
+    inputs:
+      ci_os_only:
+        description: 'Comma-separated OS filter (linux,freebsd,macos,windows,...). Leave blank for all.'
+        required: false
+        default: ''
+
+# ---------------------------------------------------------------------------
+# Cancel superseded runs on the same branch / PR
+# ---------------------------------------------------------------------------
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# ---------------------------------------------------------------------------
+# Global environment – mirrors the top-level env: from .cirrus.tasks.yml
+# ---------------------------------------------------------------------------
+env:
+  CCACHE_MAXSIZE: "250M"
+  CHECK: check-world PROVE_FLAGS=$PROVE_FLAGS
+  CHECKFLAGS: -Otarget
+  PROVE_FLAGS: --timer
+  MBUILD_TARGET: all testprep
+  MTEST_ARGS: --print-errorlogs --no-rebuild -C build
+  PGCTLTIMEOUT: 120
+  TEMP_CONFIG: ${{ github.workspace }}/src/tools/ci/pg_ci_base.conf
+  PG_TEST_EXTRA: kerberos ldap ssl libpq_encryption load_balance oauth
+  MESON_COMMON_PG_CONFIG_ARGS: -Dcassert=true -Dinjection_points=true
+  MESON_COMMON_FEATURES: >-
+    -Dauto_features=disabled
+    -Dldap=enabled
+    -Dssl=openssl
+    -Dtap_tests=enabled
+    -Dplperl=enabled
+    -Dplpython=enabled
+    -Ddocs=enabled
+    -Dicu=enabled
+    -Dlibxml=enabled
+    -Dlibxslt=enabled
+    -Dlz4=enabled
+    -Dpltcl=enabled
+    -Dreadline=enabled
+    -Dzlib=enabled
+    -Dzstd=enabled
+
+# ===================================================================
+# Helper job: compute which jobs should run based on ci-os-only tag
+# ===================================================================
+jobs:
+
+  # -----------------------------------------------------------------
+  # Resolve ci-os-only from the commit message or workflow_dispatch
+  # input. Every downstream job reads these outputs.
+  # -----------------------------------------------------------------
+  compute-config:
+    runs-on: ubuntu-latest
+    outputs:
+      run_sanity:            ${{ steps.cfg.outputs.run_sanity }}
+      run_linux:             ${{ steps.cfg.outputs.run_linux }}
+      run_freebsd:           ${{ steps.cfg.outputs.run_freebsd }}
+      run_netbsd:            ${{ steps.cfg.outputs.run_netbsd }}
+      run_openbsd:           ${{ steps.cfg.outputs.run_openbsd }}
+      run_macos:             ${{ steps.cfg.outputs.run_macos }}
+      run_windows:           ${{ steps.cfg.outputs.run_windows }}
+      run_mingw:             ${{ steps.cfg.outputs.run_mingw }}
+      run_compilerwarnings:  ${{ steps.cfg.outputs.run_compilerwarnings }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Parse ci-os-only
+        id: cfg
+        shell: bash
+        run: |
+          # Determine the os filter string
+          FILTER="${{ github.event.inputs.ci_os_only }}"
+          if [ -z "$FILTER" ]; then
+            # Try to extract from the commit message
+            MSG=$(git log -1 --format='%B' 2>/dev/null || true)
+            FILTER=$(echo "$MSG" | grep -oP '(?<=^ci-os-only:).*' | head -1 | xargs)
+          fi
+
+          if [ -z "$FILTER" ]; then
+            # No filter – everything enabled
+            for os in sanity linux freebsd netbsd openbsd macos windows mingw compilerwarnings; do
+              echo "run_${os}=true" >> "$GITHUB_OUTPUT"
+            done
+          else
+            # Disable everything first
+            for os in sanity linux freebsd netbsd openbsd macos windows mingw compilerwarnings; do
+              echo "run_${os}=false" >> "$GITHUB_OUTPUT"
+            done
+            # Sanity check always runs unless explicitly filtered out
+            echo "run_sanity=true" >> "$GITHUB_OUTPUT"
+            # Enable matching OSes
+            echo "$FILTER" | tr ',' '\n' | while read -r tok; do
+              tok=$(echo "$tok" | xargs | tr '[:upper:]' '[:lower:]')
+              case "$tok" in
+                linux)              echo "run_linux=true"             >> "$GITHUB_OUTPUT" ;;
+                freebsd)            echo "run_freebsd=true"           >> "$GITHUB_OUTPUT" ;;
+                netbsd)             echo "run_netbsd=true"            >> "$GITHUB_OUTPUT" ;;
+                openbsd)            echo "run_openbsd=true"           >> "$GITHUB_OUTPUT" ;;
+                macos|darwin|osx)   echo "run_macos=true"             >> "$GITHUB_OUTPUT" ;;
+                windows)            echo "run_windows=true"           >> "$GITHUB_OUTPUT" ;;
+                mingw)              echo "run_mingw=true"             >> "$GITHUB_OUTPUT" ;;
+                compilerwarnings)   echo "run_compilerwarnings=true"  >> "$GITHUB_OUTPUT" ;;
+              esac
+            done
+          fi
+
+  # =================================================================
+  # SanityCheck
+  # =================================================================
+  # SPECIAL:
+  # - Builds with --auto-features=disabled and thus almost no enabled
+  #   dependencies.
+  # - Gate job: all others depend on it.
+  sanity-check:
+    needs: compute-config
+    if: needs.compute-config.outputs.run_sanity == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: debian:trixie
+    timeout-minutes: 30
+    env:
+      CCACHE_DIR: /tmp/ccache_dir
+      CCACHE_MAXSIZE: "150M"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 500
+
+      - name: Install build dependencies
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get -y install \
+            meson ninja-build gcc ccache pkg-config \
+            libperl-dev libipc-run-perl perl
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/ccache_dir
+          key: sanity-ccache-${{ github.sha }}
+          restore-keys: sanity-ccache-
+
+      - name: Create user
+        run: |
+          useradd -m postgres
+          chown -R postgres:postgres .
+          mkdir -p ${CCACHE_DIR}
+          chown -R postgres:postgres ${CCACHE_DIR}
+          echo '* - memlock 134217728' > /etc/security/limits.d/postgres.conf
+          chown root:postgres /
+          chmod g+rwx /
+
+      - name: Configure
+        run: |
+          su postgres <<'EOF'
+          set -e
+          meson setup \
+            --buildtype=debug \
+            --auto-features=disabled \
+            -Ddefault_library=shared \
+            -Dtap_tests=enabled \
+            build
+          EOF
+
+      - name: Build
+        run: su postgres -c "ninja -C build -j$(nproc) ${MBUILD_TARGET}"
+
+      - name: Test (minimal)
+        run: |
+          su postgres <<'EOF'
+          set -e
+          ulimit -c unlimited
+          meson test $MTEST_ARGS --suite setup
+          meson test $MTEST_ARGS --num-processes $(nproc) \
+            cube/regress pg_ctl/001_start_stop
+          EOF
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sanity-check-logs
+          path: |
+            build*/testrun/**/*.log
+            build*/testrun/**/*.diffs
+            build*/testrun/**/regress_log_*
+            build*/meson-logs/*.txt
+          retention-days: 7
+
+  # =================================================================
+  # FreeBSD – Meson
+  # =================================================================
+  # SPECIAL:
+  # - Uses postgres specific CPPFLAGS that increase test coverage
+  # - Specifies configuration options that test reading/writing/copying
+  #   of node trees
+  # - Specifies debug_parallel_query=regress
+  # - Also runs tests against a running postgres instance
+  freebsd-meson:
+    needs: [compute-config, sanity-check]
+    if: needs.compute-config.outputs.run_freebsd == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      CCACHE_DIR: /tmp/ccache_dir
+      CPPFLAGS: -DRELCACHE_FORCE_RELEASE -DENFORCE_REGRESSION_TEST_NAME_RESTRICTIONS
+      CFLAGS: -Og -ggdb
+      PG_TEST_INITDB_EXTRA_OPTS: >-
+        -c debug_copy_parse_plan_trees=on
+        -c debug_write_read_parse_plan_trees=on
+        -c debug_raw_expression_coverage_test=on
+        -c debug_parallel_query=regress
+      PG_TEST_PG_UPGRADE_MODE: --link
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 500
+
+      - name: Build and test in FreeBSD
+        uses: cross-platform-actions/action@v0.25.0
+        with:
+          operating_system: freebsd
+          version: '14.2'
+          memory: 8G
+          cpu_count: 4
+          shell: bash
+          run: |
+            set -e
+            sudo pkg install -y \
+              meson ninja ccache pkgconf \
+              icu lz4 zstd openldap26-client curl \
+              libxml2 libxslt p5-IPC-Run krb5 \
+              python3 perl5 tcl86 gmake gettext-tools \
+              readline openssl pam dtrace-toolkit \
+              ossp-uuid
+
+            sudo pw useradd postgres -m -s /bin/sh
+            sudo chown -R postgres:postgres .
+            sudo mkdir -p /tmp/ccache_dir
+            sudo chown -R postgres:postgres /tmp/ccache_dir
+
+            sudo mkdir -m 770 /tmp/cores
+            sudo chown root:postgres /tmp/cores
+            sudo sysctl kern.corefile='/tmp/cores/%N.%P.core'
+
+            # Configure
+            sudo -u postgres meson setup \
+              -Dcassert=true -Dinjection_points=true \
+              --buildtype=debug \
+              -Dextra_lib_dirs=/usr/local/lib \
+              -Dextra_include_dirs=/usr/local/include/ \
+              -Dauto_features=disabled \
+              -Dldap=enabled -Dssl=openssl -Dtap_tests=enabled \
+              -Dplperl=enabled -Dplpython=enabled -Ddocs=enabled \
+              -Dicu=enabled -Dlibxml=enabled -Dlibxslt=enabled \
+              -Dlz4=enabled -Dpltcl=enabled -Dreadline=enabled \
+              -Dzlib=enabled -Dzstd=enabled \
+              -Ddtrace=enabled -Dgssapi=enabled -Dlibcurl=enabled \
+              -Dnls=enabled -Dpam=enabled \
+              -Dtcl_version=tcl86 -Duuid=bsd \
+              build
+
+            # Build
+            sudo -u postgres ninja -C build -j4 all testprep
+
+            # Test
+            sudo -u postgres sh -c '
+              ulimit -c unlimited
+              meson test --print-errorlogs --no-rebuild -C build \
+                --num-processes 8
+            '
+
+            # Running check
+            sudo -u postgres sh -c '
+              set -e
+              ulimit -c unlimited
+              meson test --print-errorlogs --no-rebuild -C build --quiet --suite setup
+              export LD_LIBRARY_PATH="$(pwd)/build/tmp_install/usr/local/pgsql/lib/:$LD_LIBRARY_PATH"
+              mkdir -p build/testrun
+              build/tmp_install/usr/local/pgsql/bin/initdb -N build/runningcheck --no-instructions -A trust
+              echo "include '\''$(pwd)/src/tools/ci/pg_ci_base.conf'\''" >> build/runningcheck/postgresql.conf
+              build/tmp_install/usr/local/pgsql/bin/pg_ctl -c -o "-c fsync=off" -D build/runningcheck -l build/testrun/runningcheck.log start
+              meson test --print-errorlogs --no-rebuild -C build --num-processes 8 --setup running
+              build/tmp_install/usr/local/pgsql/bin/pg_ctl -D build/runningcheck stop
+            '
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: freebsd-meson-logs
+          path: |
+            build*/testrun/**/*.log
+            build*/testrun/**/*.diffs
+            build*/testrun/**/regress_log_*
+            build*/meson-logs/*.txt
+          retention-days: 7
+
+  # =================================================================
+  # NetBSD – Meson  (weekly / manual only)
+  # =================================================================
+  netbsd-meson:
+    needs: [compute-config, sanity-check]
+    if: >-
+      needs.compute-config.outputs.run_netbsd == 'true'
+      && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 500
+
+      - name: Build and test in NetBSD
+        uses: cross-platform-actions/action@v0.25.0
+        with:
+          operating_system: netbsd
+          version: '10.0'
+          memory: 8G
+          cpu_count: 4
+          shell: bash
+          run: |
+            set -e
+            sudo pkgin -y install \
+              meson ninja-build ccache pkg-config \
+              icu lz4 zstd openldap-client curl \
+              libxml2 libxslt p5-IPC-Run mit-krb5 \
+              python312 perl tcl readline openssl \
+              gettext-tools pam
+
+            sudo useradd -m postgres
+            sudo chown -R postgres:users .
+            sudo mkdir -p /home/postgres/cache
+            sudo chown -R postgres:users /home/postgres/cache
+
+            export LANG=C LC_ALL=C
+
+            sudo -u postgres env LANG=C LC_ALL=C meson setup \
+              -Dcassert=true -Dinjection_points=true \
+              --buildtype=debugoptimized \
+              --pkg-config-path /usr/lib/pkgconfig:/usr/pkg/lib/pkgconfig \
+              -Dauto_features=disabled \
+              -Dldap=enabled -Dssl=openssl -Dtap_tests=enabled \
+              -Dplperl=enabled -Dplpython=enabled -Ddocs=enabled \
+              -Dicu=enabled -Dlibxml=enabled -Dlibxslt=enabled \
+              -Dlz4=enabled -Dpltcl=enabled -Dreadline=enabled \
+              -Dzlib=enabled -Dzstd=enabled \
+              -Dgssapi=enabled -Dlibcurl=enabled \
+              -Dnls=enabled -Dpam=enabled \
+              build
+
+            sudo -u postgres ninja -C build -j4 all testprep
+
+            sudo -u postgres sh -c '
+              ulimit -c unlimited
+              LANG=C LC_ALL=C meson test --print-errorlogs --no-rebuild -C build \
+                --num-processes 8
+            '
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: netbsd-meson-logs
+          path: |
+            build*/testrun/**/*.log
+            build*/testrun/**/*.diffs
+            build*/meson-logs/*.txt
+          retention-days: 7
+
+  # =================================================================
+  # OpenBSD – Meson  (weekly / manual only)
+  # =================================================================
+  openbsd-meson:
+    needs: [compute-config, sanity-check]
+    if: >-
+      needs.compute-config.outputs.run_openbsd == 'true'
+      && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 500
+
+      - name: Build and test in OpenBSD
+        uses: cross-platform-actions/action@v0.25.0
+        with:
+          operating_system: openbsd
+          version: '7.6'
+          memory: 8G
+          cpu_count: 4
+          shell: bash
+          run: |
+            set -e
+            sudo pkg_add -I \
+              meson ninja ccache pkgconf \
+              icu4c lz4 zstd openldap-client-- curl \
+              libxml libxslt p5-IPC-Run \
+              python3 tcl-8.6 readline \
+              gettext-tools e2fsprogs
+
+            sudo useradd -m postgres
+            sudo chown -R postgres:users .
+            sudo mkdir -p /home/postgres/cache
+            sudo chown -R postgres:users /home/postgres/cache
+
+            sudo sysctl -w kern.nosuidcoredump=2
+
+            sudo -u postgres meson setup \
+              -Dcassert=true -Dinjection_points=true \
+              --buildtype=debugoptimized \
+              --pkg-config-path /usr/lib/pkgconfig:/usr/local/lib/pkgconfig \
+              -Dauto_features=disabled \
+              -Dldap=enabled -Dssl=openssl -Dtap_tests=enabled \
+              -Dplperl=enabled -Dplpython=enabled -Ddocs=enabled \
+              -Dicu=enabled -Dlibxml=enabled -Dlibxslt=enabled \
+              -Dlz4=enabled -Dpltcl=enabled -Dreadline=enabled \
+              -Dzlib=enabled -Dzstd=enabled \
+              -Dbsd_auth=enabled -Dlibcurl=enabled \
+              -Dtcl_version=tcl86 -Duuid=e2fs \
+              build
+
+            sudo -u postgres ninja -C build -j4 all testprep
+
+            sudo -u postgres sh -c '
+              ulimit -c unlimited
+              meson test --print-errorlogs --no-rebuild -C build \
+                --num-processes 8
+            '
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openbsd-meson-logs
+          path: |
+            build*/testrun/**/*.log
+            build*/testrun/**/*.diffs
+            build*/meson-logs/*.txt
+          retention-days: 7
+
+  # =================================================================
+  # Linux – Debian Trixie – Autoconf
+  # =================================================================
+  # SPECIAL:
+  # - Uses address sanitizer; sanitizer failures typically appear in the
+  #   server log
+  # - Configures postgres with a small segment size (--with-segsize-blocks=6)
+  linux-autoconf:
+    needs: [compute-config, sanity-check]
+    if: needs.compute-config.outputs.run_linux == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: debian:trixie
+    timeout-minutes: 90
+    env:
+      CCACHE_DIR: /tmp/ccache_dir
+      SANITIZER_FLAGS: -fsanitize=address
+      CFLAGS: -Og -ggdb -fno-sanitize-recover=all -fsanitize=address
+      CXXFLAGS: -Og -ggdb -fno-sanitize-recover=all -fsanitize=address
+      LDFLAGS: -fsanitize=address
+      CC: ccache gcc
+      CXX: ccache g++
+      UBSAN_OPTIONS: "print_stacktrace=1:disable_coredump=0:abort_on_error=1:verbosity=2"
+      ASAN_OPTIONS: "print_stacktrace=1:disable_coredump=0:abort_on_error=1:detect_leaks=0:detect_stack_use_after_return=0"
+      PG_TEST_PG_COMBINEBACKUP_MODE: --copy-file-range
+      DEBUGINFOD_URLS: "https://debuginfod.debian.net"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 500
+
+      - name: Install build dependencies
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get -y install \
+            gcc g++ ccache make bison flex pkg-config \
+            libssl-dev libldap-dev libcurl4-openssl-dev \
+            libxml2-dev libxslt1-dev libicu-dev liblz4-dev \
+            libzstd-dev libpam0g-dev libselinux1-dev \
+            libsystemd-dev libperl-dev python3-dev \
+            tcl-dev libipc-run-perl libkrb5-dev \
+            libreadline-dev zlib1g-dev uuid-dev \
+            llvm-dev clang libnuma-dev liburing-dev \
+            gettext perl ossp-uuid libuuid1 \
+            liblz4-tool
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/ccache_dir
+          key: linux-ac-ccache-${{ github.sha }}
+          restore-keys: linux-ac-ccache-
+
+      - name: Create user
+        run: |
+          useradd -m postgres
+          chown -R postgres:postgres .
+          mkdir -p ${CCACHE_DIR}
+          chown -R postgres:postgres ${CCACHE_DIR}
+          echo '* - memlock 134217728' > /etc/security/limits.d/postgres.conf
+          mkdir -m 770 /tmp/cores
+          chown root:postgres /tmp/cores
+          sysctl kernel.core_pattern='/tmp/cores/%e-%s-%p.core' || true
+
+      - name: Setup hosts file
+        run: |
+          cat >> /etc/hosts <<'EOF'
+          127.0.0.1 pg-loadbalancetest
+          127.0.0.2 pg-loadbalancetest
+          127.0.0.3 pg-loadbalancetest
+          EOF
+
+      - name: Configure
+        run: |
+          su postgres <<'EOF'
+          set -e
+          ./configure \
+            --enable-cassert --enable-injection-points --enable-debug \
+            --enable-tap-tests --enable-nls \
+            --with-segsize-blocks=6 \
+            --with-libnuma \
+            --with-liburing \
+            --with-gssapi \
+            --with-icu \
+            --with-ldap \
+            --with-libcurl \
+            --with-libxml \
+            --with-libxslt \
+            --with-llvm \
+            --with-lz4 \
+            --with-pam \
+            --with-perl \
+            --with-python \
+            --with-selinux \
+            --with-ssl=openssl \
+            --with-systemd \
+            --with-tcl --with-tclconfig=/usr/lib/tcl8.6/ \
+            --with-uuid=ossp \
+            --with-zstd \
+            CLANG="ccache clang"
+          EOF
+
+      - name: Build
+        run: su postgres -c "make -s -j$(nproc) world-bin"
+
+      - name: Test
+        run: |
+          su postgres <<'EOF'
+          set -e
+          ulimit -c unlimited
+          make -s ${CHECK} ${CHECKFLAGS} -j8
+          EOF
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-autoconf-logs
+          path: |
+            **/*.log
+            **/*.diffs
+            **/regress_log_*
+          retention-days: 7
+
+      - name: Upload core backtraces on failure
+        if: failure()
+        run: src/tools/ci/cores_backtrace.sh linux /tmp/cores || true
+
+  # =================================================================
+  # Linux – Debian Trixie – Meson  (64-bit + 32-bit)
+  # =================================================================
+  # SPECIAL:
+  # - Uses undefined behaviour and alignment sanitizers
+  # - Tests both 64-bit and 32-bit builds
+  # - Uses io_method=io_uring
+  # - Uses meson feature autodetection
+  linux-meson:
+    needs: [compute-config, sanity-check]
+    if: needs.compute-config.outputs.run_linux == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: debian:trixie
+    timeout-minutes: 120
+    env:
+      CCACHE_DIR: /tmp/ccache_dir
+      CCACHE_MAXSIZE: "400M"
+      SANITIZER_FLAGS: -fsanitize=alignment,undefined
+      CFLAGS: -Og -ggdb -fno-sanitize-recover=all -fsanitize=alignment,undefined
+      CXXFLAGS: -Og -ggdb -fno-sanitize-recover=all -fsanitize=alignment,undefined
+      LDFLAGS: -fsanitize=alignment,undefined
+      CC: ccache gcc
+      CXX: ccache g++
+      UBSAN_OPTIONS: "print_stacktrace=1:disable_coredump=0:abort_on_error=1:verbosity=2"
+      ASAN_OPTIONS: "print_stacktrace=1:disable_coredump=0:abort_on_error=1:detect_leaks=0:detect_stack_use_after_return=0"
+      DEBUGINFOD_URLS: "https://debuginfod.debian.net"
+      PG_TEST_INITDB_EXTRA_OPTS: -c io_method=io_uring
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 500
+
+      - name: Install build dependencies
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get -y install \
+            meson ninja-build \
+            gcc g++ ccache make bison flex pkg-config \
+            libssl-dev libldap-dev libcurl4-openssl-dev \
+            libxml2-dev libxslt1-dev libicu-dev liblz4-dev \
+            libzstd-dev libpam0g-dev libselinux1-dev \
+            libsystemd-dev libperl-dev python3-dev \
+            tcl-dev libipc-run-perl libkrb5-dev \
+            libreadline-dev zlib1g-dev uuid-dev \
+            llvm-dev clang libnuma-dev liburing-dev \
+            gettext perl \
+            gcc-multilib g++-multilib \
+            lib32z1-dev libssl-dev:i386 \
+            libc6-dev-i386 \
+            perl-modules-5.40
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/ccache_dir
+          key: linux-meson-ccache-${{ github.sha }}
+          restore-keys: linux-meson-ccache-
+
+      - name: Create user
+        run: |
+          useradd -m postgres
+          chown -R postgres:postgres .
+          mkdir -p ${CCACHE_DIR}
+          chown -R postgres:postgres ${CCACHE_DIR}
+          echo '* - memlock 134217728' > /etc/security/limits.d/postgres.conf
+          mkdir -m 770 /tmp/cores
+          chown root:postgres /tmp/cores
+          sysctl kernel.core_pattern='/tmp/cores/%e-%s-%p.core' || true
+
+      - name: Setup hosts file
+        run: |
+          cat >> /etc/hosts <<'EOF'
+          127.0.0.1 pg-loadbalancetest
+          127.0.0.2 pg-loadbalancetest
+          127.0.0.3 pg-loadbalancetest
+          EOF
+
+      - name: Configure (64-bit)
+        run: |
+          su postgres <<'EOF'
+          set -e
+          meson setup \
+            ${MESON_COMMON_PG_CONFIG_ARGS} \
+            --buildtype=debug \
+            -Duuid=e2fs -Dllvm=enabled \
+            build
+          EOF
+
+      - name: Configure (32-bit)
+        run: |
+          su postgres <<'EOF'
+          set -e
+          export CC='ccache gcc -m32'
+          export CXX='ccache g++ -m32'
+          meson setup \
+            ${MESON_COMMON_PG_CONFIG_ARGS} \
+            --buildtype=debug \
+            --pkg-config-path /usr/lib/i386-linux-gnu/pkgconfig/ \
+            -DPERL=perl5.40-i386-linux-gnu \
+            -Duuid=e2fs -Dlibnuma=disabled \
+            build-32
+          EOF
+
+      - name: Build (64-bit)
+        run: |
+          su postgres <<'EOF'
+          set -e
+          ninja -C build -j$(nproc) ${MBUILD_TARGET}
+          ninja -C build -t missingdeps
+          EOF
+
+      - name: Build (32-bit)
+        run: |
+          su postgres <<'EOF'
+          set -e
+          ninja -C build-32 -j$(nproc) ${MBUILD_TARGET}
+          ninja -C build -t missingdeps
+          EOF
+
+      - name: Test (64-bit)
+        run: |
+          su postgres <<'EOF'
+          set -e
+          ulimit -c unlimited
+          meson test $MTEST_ARGS --num-processes 8
+          EOF
+          # Remove 64-bit logs before 32-bit test so we don't upload
+          # stale logs if 32-bit fails
+          rm -rf build/
+
+      - name: Test (32-bit)
+        run: |
+          su postgres <<'EOF'
+          set -e
+          ulimit -c unlimited
+          PYTHONCOERCECLOCALE=0 LANG=C \
+            meson test $MTEST_ARGS -C build-32 --num-processes 8
+          EOF
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-meson-logs
+          path: |
+            build*/testrun/**/*.log
+            build*/testrun/**/*.diffs
+            build*/testrun/**/regress_log_*
+            build*/meson-logs/*.txt
+          retention-days: 7
+
+      - name: Upload core backtraces on failure
+        if: failure()
+        run: src/tools/ci/cores_backtrace.sh linux /tmp/cores || true
+
+  # =================================================================
+  # macOS – Sequoia – Meson
+  # =================================================================
+  # SPECIAL:
+  # - Enables --clone for pg_upgrade and pg_combinebackup
+  macos-meson:
+    needs: [compute-config, sanity-check]
+    if: needs.compute-config.outputs.run_macos == 'true'
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/../ccache
+      CC: ccache cc
+      CXX: ccache c++
+      CFLAGS: -Og -ggdb
+      CXXFLAGS: -Og -ggdb
+      PG_TEST_PG_UPGRADE_MODE: --clone
+      PG_TEST_PG_COMBINEBACKUP_MODE: --clone
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 500
+
+      - name: Install dependencies via Homebrew
+        run: |
+          brew install \
+            ccache icu4c lz4 zstd meson \
+            openldap openssl@3 krb5 \
+            tcl-tk python@3.12 \
+            libxml2 libxslt \
+            pkg-config curl
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: macos-ccache-${{ github.sha }}
+          restore-keys: macos-ccache-
+
+      - name: Setup core dumps
+        run: |
+          mkdir -p ~/cores
+          sudo sysctl kern.corefile="$HOME/cores/core.%P"
+
+      - name: Configure
+        run: |
+          export PKG_CONFIG_PATH="$(brew --prefix icu4c)/lib/pkgconfig:$(brew --prefix openssl@3)/lib/pkgconfig:$(brew --prefix krb5)/lib/pkgconfig:$(brew --prefix curl)/lib/pkgconfig"
+          meson setup \
+            ${MESON_COMMON_PG_CONFIG_ARGS} \
+            --buildtype=debug \
+            -Dextra_include_dirs=$(brew --prefix openssl@3)/include,$(brew --prefix icu4c)/include,$(brew --prefix krb5)/include \
+            -Dextra_lib_dirs=$(brew --prefix openssl@3)/lib,$(brew --prefix icu4c)/lib,$(brew --prefix krb5)/lib \
+            ${MESON_COMMON_FEATURES} \
+            -Dbonjour=enabled \
+            -Ddtrace=enabled \
+            -Dgssapi=enabled \
+            -Dlibcurl=enabled \
+            -Dnls=enabled \
+            -Duuid=e2fs \
+            build
+
+      - name: Build
+        run: ninja -C build -j$(sysctl -n hw.ncpu) ${MBUILD_TARGET}
+
+      - name: Test
+        run: |
+          ulimit -c unlimited
+          ulimit -n 1024
+          meson test $MTEST_ARGS --num-processes 8
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-meson-logs
+          path: |
+            build*/testrun/**/*.log
+            build*/testrun/**/*.diffs
+            build*/testrun/**/regress_log_*
+            build*/meson-logs/*.txt
+          retention-days: 7
+
+      - name: Upload core backtraces on failure
+        if: failure()
+        run: src/tools/ci/cores_backtrace.sh macos "$HOME/cores" || true
+
+  # =================================================================
+  # Windows – Server 2022, VS 2019 – Meson & ninja
+  # =================================================================
+  windows-vs-meson:
+    needs: [compute-config, sanity-check]
+    if: needs.compute-config.outputs.run_windows == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 120
+    env:
+      # Avoids port conflicts between concurrent tap test runs
+      PG_TEST_USE_UNIX_SOCKETS: 1
+      PG_REGRESS_SOCK_DIR: "c:/cirrus/"
+      TAR: "c:/windows/system32/tar.exe"
+      TEST_JOBS: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 500
+
+      - name: Setup hosts file
+        shell: cmd
+        run: |
+          echo 127.0.0.1 pg-loadbalancetest >> c:\Windows\System32\Drivers\etc\hosts
+          echo 127.0.0.2 pg-loadbalancetest >> c:\Windows\System32\Drivers\etc\hosts
+          echo 127.0.0.3 pg-loadbalancetest >> c:\Windows\System32\Drivers\etc\hosts
+
+      - name: Install meson & ninja
+        shell: cmd
+        run: pip install meson
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: C:\ccache
+          key: win-vs-ccache-${{ github.sha }}
+          restore-keys: win-vs-ccache-
+
+      - name: Configure
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          meson setup ^
+            -Dcassert=true -Dinjection_points=true ^
+            --backend ninja --buildtype debug ^
+            -Db_pch=true ^
+            -Dcpp_args=/std:c++20 ^
+            -Dauto_features=disabled ^
+            -Dldap=enabled ^
+            -Dssl=openssl ^
+            -Dtap_tests=enabled ^
+            -Dplperl=enabled ^
+            -Dplpython=enabled ^
+            -Dextra_lib_dirs=c:\openssl\1.1\lib ^
+            -Dextra_include_dirs=c:\openssl\1.1\include ^
+            -DTAR=%TAR% ^
+            build
+
+      - name: Build
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          ninja -C build %MBUILD_TARGET%
+          ninja -C build -t missingdeps
+
+      - name: Test
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          meson test %MTEST_ARGS% --num-processes %TEST_JOBS%
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-vs-logs
+          path: |
+            build*/testrun/**/*.log
+            build*/testrun/**/*.diffs
+            build*/testrun/**/regress_log_*
+            build*/meson-logs/*.txt
+            crashlog-*.txt
+          retention-days: 7
+
+  # =================================================================
+  # Windows – Server 2022, MinGW64 – Meson
+  # =================================================================
+  windows-mingw-meson:
+    needs: [compute-config, sanity-check]
+    if: >-
+      needs.compute-config.outputs.run_mingw == 'true'
+      && (github.event_name != 'schedule')
+    runs-on: windows-2022
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: msys2 {0}
+    env:
+      TEST_JOBS: 4
+      CCACHE_DIR: C:/msys64/ccache
+      CCACHE_MAXSIZE: "500M"
+      CCACHE_SLOPPINESS: pch_defines,time_macros
+      CCACHE_DEPEND: 1
+      PYTHONHOME: C:/msys64/ucrt64
+      PG_TEST_USE_UNIX_SOCKETS: 1
+      PG_REGRESS_SOCK_DIR: "c:/cirrus/"
+      TAR: "c:/windows/system32/tar.exe"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 500
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-meson
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-ccache
+            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-icu
+            mingw-w64-ucrt-x86_64-lz4
+            mingw-w64-ucrt-x86_64-zstd
+            mingw-w64-ucrt-x86_64-libxml2
+            mingw-w64-ucrt-x86_64-libxslt
+            mingw-w64-ucrt-x86_64-readline
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-tcl
+            perl
+            perl-IPC-Run
+            bison flex
+
+      - name: Setup hosts file
+        shell: cmd
+        run: |
+          echo 127.0.0.1 pg-loadbalancetest >> c:\Windows\System32\Drivers\etc\hosts
+          echo 127.0.0.2 pg-loadbalancetest >> c:\Windows\System32\Drivers\etc\hosts
+          echo 127.0.0.3 pg-loadbalancetest >> c:\Windows\System32\Drivers\etc\hosts
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: C:/msys64/ccache
+          key: win-mingw-ccache-${{ github.sha }}
+          restore-keys: win-mingw-ccache-
+
+      - name: Configure
+        run: |
+          meson setup \
+            -Dcassert=true -Dinjection_points=true \
+            -Ddebug=true -Doptimization=g \
+            -Db_pch=true \
+            -Dauto_features=disabled \
+            -Dldap=enabled \
+            -Dssl=openssl \
+            -Dtap_tests=enabled \
+            -Dplperl=enabled \
+            -Dplpython=enabled \
+            -Dicu=enabled \
+            -Dlibxml=enabled \
+            -Dlibxslt=enabled \
+            -Dlz4=enabled \
+            -Dreadline=enabled \
+            -Dzlib=enabled \
+            -Dzstd=enabled \
+            -Dnls=disabled \
+            -DTAR=${TAR} \
+            build
+
+      - name: Build
+        run: ninja -C build ${MBUILD_TARGET}
+
+      - name: Test
+        run: meson test ${MTEST_ARGS} --num-processes ${TEST_JOBS}
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-mingw-logs
+          path: |
+            build*/testrun/**/*.log
+            build*/testrun/**/*.diffs
+            build*/testrun/**/regress_log_*
+            build*/meson-logs/*.txt
+            crashlog-*.txt
+          retention-days: 7
+
+  # =================================================================
+  # CompilerWarnings
+  # =================================================================
+  # Tests that code builds without warnings under gcc and clang with
+  # various combinations of cassert/dtrace. Also builds docs and runs
+  # headerscheck/cpluspluscheck.
+  compiler-warnings:
+    needs: [compute-config, sanity-check]
+    if: needs.compute-config.outputs.run_compilerwarnings == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: debian:trixie
+    timeout-minutes: 120
+    env:
+      CCACHE_DIR: /tmp/ccache_dir
+      CCACHE_MAXSIZE: "1G"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 500
+
+      - name: Install build dependencies
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get -y install \
+            gcc g++ clang ccache make bison flex pkg-config \
+            libssl-dev libldap-dev libcurl4-openssl-dev \
+            libxml2-dev libxslt1-dev libicu-dev liblz4-dev \
+            libzstd-dev libpam0g-dev libselinux1-dev \
+            libsystemd-dev libperl-dev python3-dev \
+            tcl-dev libipc-run-perl libkrb5-dev \
+            libreadline-dev zlib1g-dev uuid-dev \
+            llvm-dev libnuma-dev liburing-dev \
+            gettext perl ossp-uuid \
+            systemtap-sdt-dev \
+            docbook-xml docbook-xsl xsltproc \
+            gcc-mingw-w64-x86-64-posix
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/ccache_dir
+          key: compwarn-ccache-${{ github.sha }}
+          restore-keys: compwarn-ccache-
+
+      - name: Setup
+        run: echo "COPT=-Werror" > src/Makefile.custom
+
+      # gcc, cassert off, dtrace on
+      - name: 'gcc: dtrace=on, cassert=off'
+        run: |
+          ./configure \
+            --cache gcc.cache \
+            --enable-dtrace \
+            --with-gssapi --with-icu --with-ldap --with-libcurl \
+            --with-libxml --with-libxslt --with-llvm --with-lz4 \
+            --with-pam --with-perl --with-python --with-selinux \
+            --with-ssl=openssl --with-systemd \
+            --with-tcl --with-tclconfig=/usr/lib/tcl8.6/ \
+            --with-uuid=ossp --with-zstd \
+            CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"
+          make -s -j$(nproc) clean
+          make -s -j$(nproc) world-bin
+
+      # gcc, cassert on, dtrace off
+      - name: 'gcc: dtrace=off, cassert=on'
+        run: |
+          ./configure \
+            --cache gcc.cache \
+            --enable-cassert \
+            --with-gssapi --with-icu --with-ldap --with-libcurl \
+            --with-libxml --with-libxslt --with-llvm --with-lz4 \
+            --with-pam --with-perl --with-python --with-selinux \
+            --with-ssl=openssl --with-systemd \
+            --with-tcl --with-tclconfig=/usr/lib/tcl8.6/ \
+            --with-uuid=ossp --with-zstd \
+            CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"
+          make -s -j$(nproc) clean
+          make -s -j$(nproc) world-bin
+
+      # clang, cassert off, dtrace off
+      - name: 'clang: dtrace=off, cassert=off'
+        run: |
+          ./configure \
+            --cache clang.cache \
+            --with-gssapi --with-icu --with-ldap --with-libcurl \
+            --with-libxml --with-libxslt --with-llvm --with-lz4 \
+            --with-pam --with-perl --with-python --with-selinux \
+            --with-ssl=openssl --with-systemd \
+            --with-tcl --with-tclconfig=/usr/lib/tcl8.6/ \
+            --with-uuid=ossp --with-zstd \
+            CC="ccache clang" CXX="ccache clang++" CLANG="ccache clang"
+          make -s -j$(nproc) clean
+          make -s -j$(nproc) world-bin
+
+      # clang, cassert on, dtrace on
+      - name: 'clang: dtrace=on, cassert=on'
+        run: |
+          ./configure \
+            --cache clang.cache \
+            --enable-cassert \
+            --enable-dtrace \
+            --with-gssapi --with-icu --with-ldap --with-libcurl \
+            --with-libxml --with-libxslt --with-llvm --with-lz4 \
+            --with-pam --with-perl --with-python --with-selinux \
+            --with-ssl=openssl --with-systemd \
+            --with-tcl --with-tclconfig=/usr/lib/tcl8.6/ \
+            --with-uuid=ossp --with-zstd \
+            CC="ccache clang" CXX="ccache clang++" CLANG="ccache clang"
+          make -s -j$(nproc) clean
+          make -s -j$(nproc) world-bin
+
+      # Cross-compile to Windows
+      - name: 'mingw cross-compile'
+        run: |
+          ./configure \
+            --host=x86_64-w64-mingw32ucrt \
+            --enable-cassert \
+            --without-icu \
+            CC="ccache x86_64-w64-mingw32ucrt-gcc" \
+            CXX="ccache x86_64-w64-mingw32ucrt-g++"
+          make -s -j$(nproc) clean
+          make -s -j$(nproc) world-bin
+
+      # Build docs
+      - name: Build docs
+        run: |
+          ./configure \
+            --cache gcc.cache \
+            CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"
+          make -s -j$(nproc) clean
+          make -s -j$(nproc) -C doc
+
+      # headerscheck + cpluspluscheck
+      - name: headerscheck / cpluspluscheck
+        run: |
+          ./configure \
+            --with-gssapi --with-icu --with-ldap --with-libcurl \
+            --with-libxml --with-libxslt --with-llvm --with-lz4 \
+            --with-pam --with-perl --with-python --with-selinux \
+            --with-ssl=openssl --with-systemd \
+            --with-tcl --with-tclconfig=/usr/lib/tcl8.6/ \
+            --with-uuid=ossp --with-zstd \
+            --cache gcc.cache --quiet \
+            CC="ccache gcc" CXX="ccache g++" CLANG="ccache clang"
+          make -s -j$(nproc) clean
+          make -s -j$(nproc) -k -Otarget headerscheck cpluspluscheck \
+            EXTRAFLAGS='-fmax-errors=10'
