@@ -438,6 +438,7 @@ static const JsonPathKeyword keywords[] = {
 	{8, false, DATETIME_P, "datetime"},
 	{8, false, KEYVALUE_P, "keyvalue"},
 	{9, false, TIMESTAMP_P, "timestamp"},
+	{9, false, STR_TRANSLATE_P, "translate"},
 	{10, false, LIKE_REGEX_P, "like_regex"},
 	{10, false, STR_SPLIT_PART_P, "split_part"},
 	{12, false, TIMESTAMP_TZ_P, "timestamp_tz"},

@@ -1690,6 +1690,7 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 		case jpiStrBtrim:
 		case jpiStrInitcap:
 		case jpiStrSplitPart:
+		case jpiStrTranslate:
 			{
 				if (unwrap && JsonbType(jb) == jbvArray)
 					return executeItemUnwrapTargetArray(cxt, jsp, jb, found, false);
@@ -2921,6 +2922,7 @@ executeStringInternalMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
 		   jsp->type == jpiStrRtrim ||
 		   jsp->type == jpiStrBtrim ||
 		   jsp->type == jpiStrInitcap ||
+		   jsp->type == jpiStrTranslate ||
 		   jsp->type == jpiStrSplitPart);
 
 	if (!(jb = getScalar(jb, jbvString)))
@@ -2935,23 +2937,33 @@ executeStringInternalMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
 	switch (jsp->type)
 	{
 		case jpiStrReplace:
+		case jpiStrTranslate:
 			{
 				char	   *from_str,
 						   *to_str;
+				PGFunction	func;
 
 				jspGetLeftArg(jsp, &elem);
 				if (elem.type != jpiString)
-					elog(ERROR, "invalid jsonpath item type for .replace() from");
+					elog(ERROR, "invalid jsonpath item type for .%s() from",
+						 jspOperationName(jsp->type));
 
 				from_str = jspGetString(&elem, NULL);
 
 				jspGetRightArg(jsp, &elem);
 				if (elem.type != jpiString)
-					elog(ERROR, "invalid jsonpath item type for .replace() to");
+					elog(ERROR, "invalid jsonpath item type for .%s() to",
+						 jspOperationName(jsp->type));
 
 				to_str = jspGetString(&elem, NULL);
 
-				resStr = TextDatumGetCString(DirectFunctionCall3Coll(replace_text,
+				/* Dispatch to the correct internal function */
+				if (jsp->type == jpiStrReplace)
+					func = replace_text;
+				else
+					func = translate;
+
+				resStr = TextDatumGetCString(DirectFunctionCall3Coll(func,
 																	 DEFAULT_COLLATION_OID,
 																	 str,
 																	 CStringGetTextDatum(from_str),

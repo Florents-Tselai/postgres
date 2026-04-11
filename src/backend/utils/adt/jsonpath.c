@@ -300,6 +300,7 @@ flattenJsonPathParseItem(StringInfo buf, int *result, struct Node *escontext,
 		case jpiDecimal:
 		case jpiStrReplace:
 		case jpiStrSplitPart:
+		case jpiStrTranslate:
 			{
 				/*
 				 * First, reserve place for left/right arg's positions, then
@@ -893,6 +894,15 @@ printJsonPathItem(StringInfo buf, JsonPathItem *v, bool inKey,
 		case jpiStrInitcap:
 			appendStringInfoString(buf, ".initcap()");
 			break;
+		case jpiStrTranslate:
+			appendStringInfoString(buf, ".translate(");
+			jspGetLeftArg(v, &elem);
+			printJsonPathItem(buf, &elem, false, false);
+			appendStringInfoChar(buf, ',');
+			jspGetRightArg(v, &elem);
+			printJsonPathItem(buf, &elem, false, false);
+			appendStringInfoChar(buf, ')');
+			break;
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", v->type);
 	}
@@ -992,6 +1002,8 @@ jspOperationName(JsonPathItemType type)
 			return "initcap";
 		case jpiStrSplitPart:
 			return "split_part";
+		case jpiStrTranslate:
+			return "translate";
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", type);
 			return NULL;
@@ -1123,6 +1135,7 @@ jspInitByBuffer(JsonPathItem *v, char *base, int32 pos)
 		case jpiStartsWith:
 		case jpiDecimal:
 		case jpiStrReplace:
+		case jpiStrTranslate:
 		case jpiStrSplitPart:
 			read_int32(v->content.args.left, base, pos);
 			read_int32(v->content.args.right, base, pos);
@@ -1249,7 +1262,8 @@ jspGetNext(JsonPathItem *v, JsonPathItem *a)
 			   v->type == jpiStrRtrim ||
 			   v->type == jpiStrBtrim ||
 			   v->type == jpiStrInitcap ||
-			   v->type == jpiStrSplitPart);
+			   v->type == jpiStrSplitPart ||
+			   v->type == jpiStrTranslate);
 
 		if (a)
 			jspInitByBuffer(a, v->base, v->nextPos);
@@ -1278,6 +1292,7 @@ jspGetLeftArg(JsonPathItem *v, JsonPathItem *a)
 		   v->type == jpiStartsWith ||
 		   v->type == jpiDecimal ||
 		   v->type == jpiStrReplace ||
+		   v->type == jpiStrTranslate ||
 		   v->type == jpiStrSplitPart);
 
 	jspInitByBuffer(a, v->base, v->content.args.left);
@@ -1302,6 +1317,7 @@ jspGetRightArg(JsonPathItem *v, JsonPathItem *a)
 		   v->type == jpiStartsWith ||
 		   v->type == jpiDecimal ||
 		   v->type == jpiStrReplace ||
+		   v->type == jpiStrTranslate ||
 		   v->type == jpiStrSplitPart);
 
 	jspInitByBuffer(a, v->base, v->content.args.right);
@@ -1610,6 +1626,7 @@ jspIsMutableWalker(JsonPathItem *jpi, struct JsonPathMutableContext *cxt)
 			case jpiStrBtrim:
 			case jpiStrInitcap:
 			case jpiStrSplitPart:
+			case jpiStrTranslate:
 				status = jpdsNonDateTime;
 				break;
 

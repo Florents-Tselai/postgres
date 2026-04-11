@@ -409,6 +409,7 @@ CREATE INDEX ON test_jsonb_mutability (JSON_QUERY(js, '$.lower()'));
 CREATE INDEX ON test_jsonb_mutability (JSON_QUERY(js, '$.upper()'));
 CREATE INDEX ON test_jsonb_mutability (JSON_QUERY(js, '$.initcap()'));
 CREATE INDEX ON test_jsonb_mutability (JSON_QUERY(js, '$.replace("hello", "bye")'));
+CREATE INDEX ON test_jsonb_mutability (JSON_QUERY(js, '$.translate("hello", "bye")'));
 CREATE INDEX ON test_jsonb_mutability (JSON_QUERY(js, '$.split_part(",", 2)'));
 
 -- DEFAULT expression

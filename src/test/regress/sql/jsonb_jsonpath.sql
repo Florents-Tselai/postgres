@@ -718,6 +718,17 @@ select jsonb_path_query('1.23', '$.replace("x", "bye")');
 select jsonb_path_query('"hello world"', '$.replace("hello","bye")');
 select jsonb_path_query('"hello world"', '$.replace("hello","bye") starts with "bye"');
 
+-- Test .translate()
+select jsonb_path_query('null', '$.translate("x", "bye")');
+select jsonb_path_query('null', '$.translate("x", "bye")', silent => true);
+select jsonb_path_query('["x", "y", "z"]', '$.translate("x", "bye")');
+select jsonb_path_query('{}', '$.translate("x", "bye")');
+select jsonb_path_query('[]', 'strict $.translate("x", "bye")', silent => true);
+select jsonb_path_query('{}', '$.translate("x", "bye")', silent => true);
+select jsonb_path_query('1.23', '$.translate("x", "bye")');
+select jsonb_path_query('"hello world"', '$.translate("hello","bye")');
+select jsonb_path_query('"hello world"', '$.translate("hello","bye") starts with "bye"');
+
 -- Test .split_part()
 select jsonb_path_query('"abc~@~def~@~ghi"', '$.split_part("~@~", 2)');
 select jsonb_path_query('"abc,def,ghi,jkl"', '$.split_part(",", -2)');

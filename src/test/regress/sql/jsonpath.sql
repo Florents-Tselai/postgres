@@ -79,6 +79,7 @@ select '$.date()'::jsonpath;
 select '$.decimal(4,2)'::jsonpath;
 select '$.string()'::jsonpath;
 select '$.replace("hello","bye")'::jsonpath;
+select '$.translate("hello","bye")'::jsonpath;
 select '$.lower()'::jsonpath;
 select '$.upper()'::jsonpath;
 select '$.lower().upper().lower().replace("hello","bye")'::jsonpath;
