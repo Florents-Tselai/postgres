@@ -2842,6 +2842,24 @@ ERROR:  jsonpath member accessor can only be applied to an object
 
       <row>
        <entry role="func_table_entry"><para role="func_signature">
+        <replaceable>string</replaceable> <literal>.</literal> <literal>translate(<replaceable>from</replaceable>, <replaceable>to</replaceable>)</literal>
+        <returnvalue><replaceable>string</replaceable></returnvalue>
+       </para>
+        <para>
+         String where each character that matches a character in the
+         <replaceable>from</replaceable> string is replaced with the corresponding
+         character in the <replaceable>to</replaceable> string. If <replaceable>from</replaceable>
+         is longer than <replaceable>to</replaceable>, occurrences of the extra characters in
+         <replaceable>from</replaceable> are deleted.
+        </para>
+        <para>
+         <literal>jsonb_path_query('"12345"', '$.translate("143", "ax")')</literal>
+         <returnvalue>"a2x5"</returnvalue>
+        </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
         <replaceable>string</replaceable> <literal>.</literal> <literal>split_part(<replaceable>delimiter</replaceable>, <replaceable>n</replaceable>)</literal>
         <returnvalue><replaceable>string</replaceable></returnvalue>
        </para>
