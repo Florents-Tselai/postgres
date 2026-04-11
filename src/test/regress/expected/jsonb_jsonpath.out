@@ -3060,6 +3060,48 @@ select jsonb_path_query('"hello world"', '$.replace("hello","bye") starts with "
  true
 (1 row)
 
+-- Test .translate()
+select jsonb_path_query('null', '$.translate("x", "bye")');
+ERROR:  jsonpath item method .translate() can only be applied to a string
+select jsonb_path_query('null', '$.translate("x", "bye")', silent => true);
+ jsonb_path_query 
+------------------
+(0 rows)
+
+select jsonb_path_query('["x", "y", "z"]', '$.translate("x", "bye")');
+ jsonb_path_query 
+------------------
+ "b"
+ "y"
+ "z"
+(3 rows)
+
+select jsonb_path_query('{}', '$.translate("x", "bye")');
+ERROR:  jsonpath item method .translate() can only be applied to a string
+select jsonb_path_query('[]', 'strict $.translate("x", "bye")', silent => true);
+ jsonb_path_query 
+------------------
+(0 rows)
+
+select jsonb_path_query('{}', '$.translate("x", "bye")', silent => true);
+ jsonb_path_query 
+------------------
+(0 rows)
+
+select jsonb_path_query('1.23', '$.translate("x", "bye")');
+ERROR:  jsonpath item method .translate() can only be applied to a string
+select jsonb_path_query('"hello world"', '$.translate("hello","bye")');
+ jsonb_path_query 
+------------------
+ "byee wred"
+(1 row)
+
+select jsonb_path_query('"hello world"', '$.translate("hello","bye") starts with "bye"');
+ jsonb_path_query 
+------------------
+ true
+(1 row)
+
 -- Test .split_part()
 select jsonb_path_query('"abc~@~def~@~ghi"', '$.split_part("~@~", 2)');
  jsonb_path_query 
