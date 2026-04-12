@@ -3062,7 +3062,6 @@ executeStringInternalMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
 				bool	   *nulls;
 				int			nelems;
 				JsonbInState state = {0};
-				JsonbValue *res_jbv;
 
 				/* Extract the delimiter */
 				jspGetLeftArg(jsp, &elem);
