@@ -1690,6 +1690,7 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 		case jpiStrBtrim:
 		case jpiStrInitcap:
 		case jpiStrSplitPart:
+		case jpiStrSplit:
 		case jpiStrTranslate:
 			{
 				if (unwrap && JsonbType(jb) == jbvArray)
@@ -2923,7 +2924,8 @@ executeStringInternalMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
 		   jsp->type == jpiStrBtrim ||
 		   jsp->type == jpiStrInitcap ||
 		   jsp->type == jpiStrTranslate ||
-		   jsp->type == jpiStrSplitPart);
+		   jsp->type == jpiStrSplitPart ||
+		   jsp->type == jpiStrSplit);
 
 	if (!(jb = getScalar(jb, jbvString)))
 		RETURN_ERROR(ereport(ERROR,
@@ -3049,6 +3051,95 @@ executeStringInternalMethod(JsonPathExecContext *cxt, JsonPathItem *jsp,
 																	 CStringGetTextDatum(from_str),
 																	 DirectFunctionCall1(numeric_int4, NumericGetDatum(n))));
 				break;
+			}
+		case jpiStrSplit:
+			{
+				char	   *delim_str;
+				char	   *null_str = NULL;
+				Datum		arr_datum;
+				ArrayType  *arr;
+				Datum	   *elems;
+				bool	   *nulls;
+				int			nelems;
+				JsonbInState state = {0};
+				JsonbValue *res_jbv;
+
+				/* Extract the delimiter */
+				jspGetLeftArg(jsp, &elem);
+				if (elem.type != jpiString)
+					elog(ERROR, "invalid jsonpath item type for .split() delimiter");
+
+				delim_str = jspGetString(&elem, NULL);
+
+				/* Extract the optional null_string */
+				if (jsp->content.args.right != 0)
+				{
+					jspGetRightArg(jsp, &elem);
+					if (elem.type != jpiString)
+						elog(ERROR, "invalid jsonpath item type for .split() null_string");
+
+					null_str = jspGetString(&elem, NULL);
+				}
+
+				/* forward the execution to internal text_to_array functions */
+				if (null_str)
+				{
+					arr_datum = DirectFunctionCall3Coll(text_to_array_null,
+														DEFAULT_COLLATION_OID,
+														str,
+														CStringGetTextDatum(delim_str),
+														CStringGetTextDatum(null_str));
+				}
+				else
+				{
+					arr_datum = DirectFunctionCall2Coll(text_to_array,
+														DEFAULT_COLLATION_OID,
+														str,
+														CStringGetTextDatum(delim_str));
+				}
+
+				arr = DatumGetArrayTypeP(arr_datum);
+				deconstruct_array_builtin(arr, TEXTOID, &elems, &nulls, &nelems);
+
+				pushJsonbValue(&state, WJB_BEGIN_ARRAY, NULL);
+
+				for (int i = 0; i < nelems; i++)
+				{
+					JsonbValue	v;
+
+					if (nulls[i])
+					{
+						v.type = jbvNull;
+					}
+					else
+					{
+						char	   *val = TextDatumGetCString(elems[i]);
+
+						v.type = jbvString;
+						v.val.string.val = val;
+						v.val.string.len = strlen(val);
+					}
+					pushJsonbValue(&state, WJB_ELEM, &v);
+				}
+
+				pushJsonbValue(&state, WJB_END_ARRAY, NULL);
+
+				{
+					Jsonb	   *jb_result = JsonbValueToJsonb(state.result);
+					JsonbValue	binary_jbv;
+
+					binary_jbv.type = jbvBinary;
+					binary_jbv.val.binary.data = &jb_result->root;
+					binary_jbv.val.binary.len = VARSIZE(jb_result);
+
+					res = jperOk;
+					hasNext = jspGetNext(jsp, &elem);
+
+					if (!hasNext && !found)
+						return res;
+
+					return executeNextItem(cxt, jsp, &elem, &binary_jbv, found);
+				}
 			}
 		default:
 			elog(ERROR, "unsupported jsonpath item type: %d", jsp->type);
