@@ -329,6 +329,37 @@ flattenJsonPathParseItem(StringInfo buf, int *result, struct Node *escontext,
 				*(int32 *) (buf->data + right) = chld - pos;
 			}
 			break;
+		case jpiStrSplit:
+			{
+				/* Reserve space for left and right arg positions */
+				int32		left = reserveSpaceForItemPointer(buf);
+				int32		right = reserveSpaceForItemPointer(buf);
+
+				/* Flatten the required left argument (the delimiter) */
+				if (!flattenJsonPathParseItem(buf, &chld, escontext,
+											  item->value.args.left,
+											  nestingLevel,
+											  insideArraySubscript))
+					return false;
+				*(int32 *) (buf->data + left) = chld - pos;
+
+				/* Flatten the optional right argument only if provided */
+				if (item->value.args.right != NULL)
+				{
+					if (!flattenJsonPathParseItem(buf, &chld, escontext,
+												  item->value.args.right,
+												  nestingLevel,
+												  insideArraySubscript))
+						return false;
+					*(int32 *) (buf->data + right) = chld - pos;
+				}
+				else
+				{
+					/* Default to 0 if missing */
+					*(int32 *) (buf->data + right) = 0;
+				}
+			}
+			break;
 		case jpiLikeRegex:
 			{
 				int32		offs;
@@ -864,6 +895,18 @@ printJsonPathItem(StringInfo buf, JsonPathItem *v, bool inKey,
 			printJsonPathItem(buf, &elem, false, false);
 			appendStringInfoChar(buf, ')');
 			break;
+		case jpiStrSplit:
+			appendStringInfoString(buf, ".split(");
+			jspGetLeftArg(v, &elem);
+			printJsonPathItem(buf, &elem, false, false);
+			if (v->content.args.right != 0)
+			{
+				appendStringInfoChar(buf, ',');
+				jspGetRightArg(v, &elem);
+				printJsonPathItem(buf, &elem, false, false);
+			}
+			appendStringInfoChar(buf, ')');
+			break;
 		case jpiStrLtrim:
 			appendStringInfoString(buf, ".ltrim(");
 			if (v->content.arg)
@@ -1136,6 +1179,7 @@ jspInitByBuffer(JsonPathItem *v, char *base, int32 pos)
 		case jpiDecimal:
 		case jpiStrReplace:
 		case jpiStrTranslate:
+		case jpiStrSplit:
 		case jpiStrSplitPart:
 			read_int32(v->content.args.left, base, pos);
 			read_int32(v->content.args.right, base, pos);
@@ -1263,6 +1307,7 @@ jspGetNext(JsonPathItem *v, JsonPathItem *a)
 			   v->type == jpiStrBtrim ||
 			   v->type == jpiStrInitcap ||
 			   v->type == jpiStrSplitPart ||
+			   v->type == jpiStrSplit ||
 			   v->type == jpiStrTranslate);
 
 		if (a)
@@ -1293,6 +1338,7 @@ jspGetLeftArg(JsonPathItem *v, JsonPathItem *a)
 		   v->type == jpiDecimal ||
 		   v->type == jpiStrReplace ||
 		   v->type == jpiStrTranslate ||
+		   v->type == jpiStrSplit ||
 		   v->type == jpiStrSplitPart);
 
 	jspInitByBuffer(a, v->base, v->content.args.left);
@@ -1318,7 +1364,8 @@ jspGetRightArg(JsonPathItem *v, JsonPathItem *a)
 		   v->type == jpiDecimal ||
 		   v->type == jpiStrReplace ||
 		   v->type == jpiStrTranslate ||
-		   v->type == jpiStrSplitPart);
+		   v->type == jpiStrSplitPart ||
+		   v->type == jpiStrSplit);
 
 	jspInitByBuffer(a, v->base, v->content.args.right);
 }
@@ -1626,6 +1673,7 @@ jspIsMutableWalker(JsonPathItem *jpi, struct JsonPathMutableContext *cxt)
 			case jpiStrBtrim:
 			case jpiStrInitcap:
 			case jpiStrSplitPart:
+			case jpiStrSplit:
 			case jpiStrTranslate:
 				status = jpdsNonDateTime;
 				break;

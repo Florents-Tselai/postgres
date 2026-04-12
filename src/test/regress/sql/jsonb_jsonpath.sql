@@ -733,6 +733,12 @@ select jsonb_path_query('"hello world"', '$.translate("hello","bye") starts with
 select jsonb_path_query('"abc~@~def~@~ghi"', '$.split_part("~@~", 2)');
 select jsonb_path_query('"abc,def,ghi,jkl"', '$.split_part(",", -2)');
 
+-- Test .split()
+select jsonb_path_query('"a,b,c"', '$.split(",")');
+select jsonb_path_query('"a,,c"', '$.split(",", "")');
+-- proving the output is a real, indexable JSON array
+select jsonb_path_query('"a,b,c"', '$.split(",")[1]');
+
 -- Test string methods play nicely together
 select jsonb_path_query('"hello world"', '$.replace("hello","bye").upper()');
 select jsonb_path_query('"hElLo WorlD"', '$.lower().upper().lower().replace("hello","bye")');

@@ -2881,6 +2881,26 @@ ERROR:  jsonpath member accessor can only be applied to an object
 
       <row>
        <entry role="func_table_entry"><para role="func_signature">
+        <replaceable>string</replaceable> <literal>.</literal> <literal>split(<replaceable>delimiter</replaceable> <optional>, <replaceable>null_string</replaceable></optional>)</literal>
+        <returnvalue><replaceable>array</replaceable></returnvalue>
+       </para>
+        <para>
+         Splits the string at occurrences of <replaceable>delimiter</replaceable> and forms
+         the resulting fields into a JSON array. If <replaceable>null_string</replaceable>
+         is supplied, fields matching that string are replaced by JSON null values.
+        </para>
+        <para>
+         <literal>jsonb_path_query('"a,b,c"', '$.split(",")')</literal>
+         <returnvalue>["a", "b", "c"]</returnvalue>
+        </para>
+        <para>
+         <literal>jsonb_path_query('"xx~~yy~~zz"', '$.split("~~", "yy")')</literal>
+         <returnvalue>["xx", null, "zz"]</returnvalue>
+        </para></entry>
+      </row>
+
+      <row>
+       <entry role="func_table_entry"><para role="func_signature">
         <replaceable>string</replaceable> <literal>.</literal> <literal>ltrim([ <replaceable>characters</replaceable> ])</literal>
         <returnvalue><replaceable>string</replaceable></returnvalue>
        </para>
