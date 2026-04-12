@@ -330,35 +330,35 @@ flattenJsonPathParseItem(StringInfo buf, int *result, struct Node *escontext,
 			}
 			break;
 		case jpiStrSplit:
-		{
-			/* Reserve space for left and right arg positions */
-			int32		left = reserveSpaceForItemPointer(buf);
-			int32		right = reserveSpaceForItemPointer(buf);
-
-			/* Flatten the required left argument (the delimiter) */
-			if (!flattenJsonPathParseItem(buf, &chld, escontext,
-										  item->value.args.left,
-										  nestingLevel,
-										  insideArraySubscript))
-				return false;
-			*(int32 *) (buf->data + left) = chld - pos;
-
-			/* Flatten the optional right argument only if provided */
-			if (item->value.args.right != NULL)
 			{
+				/* Reserve space for left and right arg positions */
+				int32		left = reserveSpaceForItemPointer(buf);
+				int32		right = reserveSpaceForItemPointer(buf);
+
+				/* Flatten the required left argument (the delimiter) */
 				if (!flattenJsonPathParseItem(buf, &chld, escontext,
-											  item->value.args.right,
+											  item->value.args.left,
 											  nestingLevel,
 											  insideArraySubscript))
 					return false;
-				*(int32 *) (buf->data + right) = chld - pos;
+				*(int32 *) (buf->data + left) = chld - pos;
+
+				/* Flatten the optional right argument only if provided */
+				if (item->value.args.right != NULL)
+				{
+					if (!flattenJsonPathParseItem(buf, &chld, escontext,
+												  item->value.args.right,
+												  nestingLevel,
+												  insideArraySubscript))
+						return false;
+					*(int32 *) (buf->data + right) = chld - pos;
+				}
+				else
+				{
+					/* Default to 0 if missing */
+					*(int32 *) (buf->data + right) = 0;
+				}
 			}
-			else
-			{
-				/* Default to 0 if missing */
-				*(int32 *) (buf->data + right) = 0;
-			}
-		}
 			break;
 		case jpiLikeRegex:
 			{
