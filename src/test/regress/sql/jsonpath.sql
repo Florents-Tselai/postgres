@@ -91,6 +91,7 @@ select '$.btrim()'::jsonpath;
 select '$.btrim("xyz")'::jsonpath;
 select '$.initcap()'::jsonpath;
 select '$.split_part("~@~", 2)'::jsonpath;
+select '$.split(",")'::jsonpath;
 
 -- Parse errors
 select '$.replace("hello")'::jsonpath;
@@ -100,6 +101,10 @@ select '$.split_part("~@~")'::jsonpath;
 select '$.split_part()'::jsonpath;
 select '$.split_part("~@~", "hi")'::jsonpath;
 select '$.split_part("~@~", 2, "extra")'::jsonpath;
+select '$.split()'::jsonpath;
+select '$.split(",", "null", "extra")'::jsonpath;
+select '$.split(1)'::jsonpath;
+select '$.split(",", 1)'::jsonpath;
 select '$.lower("hi")'::jsonpath;
 select '$.upper("hi")'::jsonpath;
 select '$.initcap("hi")'::jsonpath;
@@ -116,6 +121,7 @@ select '$.upper'::jsonpath;
 select '$.initcap'::jsonpath;
 select '$.replace'::jsonpath;
 select '$.split_part'::jsonpath;
+select '$.split'::jsonpath;
 select '$.ltrim'::jsonpath;
 select '$.rtrim'::jsonpath;
 select '$.btrim'::jsonpath;

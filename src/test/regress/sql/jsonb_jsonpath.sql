@@ -737,6 +737,12 @@ select jsonb_path_query('"a,b"', '$.split_part(",", 0)', silent => true);
 select jsonb_path_query('"a,b"', '$.split_part(",", 2147483648)');
 select jsonb_path_query('"a,b"', '$.split_part(",", 2147483648)', silent => true);
 
+-- Test .split()
+select jsonb_path_query('"a,b,c"', '$.split(",")');
+select jsonb_path_query('"a,,c"', '$.split(",", "")');
+-- proving the output is a real, indexable JSON array
+select jsonb_path_query('"a,b,c"', '$.split(",")[1]');
+
 -- Test string methods play nicely together
 select jsonb_path_query('"hello world"', '$.replace("hello","bye").upper()');
 select jsonb_path_query('"hElLo WorlD"', '$.lower().upper().lower().replace("hello","bye")');

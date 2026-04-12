@@ -3118,16 +3118,36 @@ select jsonb_path_query('"abc,def,ghi,jkl"', '$.split_part(",", -2)');
 select jsonb_path_query('"a,b"', '$.split_part(",", 0)');
 ERROR:  field position of jsonpath item method .split_part() must not be zero
 select jsonb_path_query('"a,b"', '$.split_part(",", 0)', silent => true);
- jsonb_path_query 
+ jsonb_path_query
 ------------------
 (0 rows)
 
 select jsonb_path_query('"a,b"', '$.split_part(",", 2147483648)');
 ERROR:  field position of jsonpath item method .split_part() is out of range for type integer
 select jsonb_path_query('"a,b"', '$.split_part(",", 2147483648)', silent => true);
- jsonb_path_query 
+ jsonb_path_query
 ------------------
 (0 rows)
+
+-- Test .split()
+select jsonb_path_query('"a,b,c"', '$.split(",")');
+ jsonb_path_query
+------------------
+ ["a", "b", "c"]
+(1 row)
+
+select jsonb_path_query('"a,,c"', '$.split(",", "")');
+ jsonb_path_query
+------------------
+ ["a", null, "c"]
+(1 row)
+
+-- proving the output is a real, indexable JSON array
+select jsonb_path_query('"a,b,c"', '$.split(",")[1]');
+ jsonb_path_query
+------------------
+ "b"
+(1 row)
 
 -- Test string methods play nicely together
 select jsonb_path_query('"hello world"', '$.replace("hello","bye").upper()');

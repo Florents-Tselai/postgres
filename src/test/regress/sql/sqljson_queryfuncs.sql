@@ -411,6 +411,7 @@ CREATE INDEX ON test_jsonb_mutability (JSON_QUERY(js, '$.initcap()'));
 CREATE INDEX ON test_jsonb_mutability (JSON_QUERY(js, '$.replace("hello", "bye")'));
 CREATE INDEX ON test_jsonb_mutability (JSON_QUERY(js, '$.translate("hello", "bye")'));
 CREATE INDEX ON test_jsonb_mutability (JSON_QUERY(js, '$.split_part(",", 2)'));
+CREATE INDEX ON test_jsonb_mutability (JSON_QUERY(js, '$.split(",")'));
 
 -- DEFAULT expression
 CREATE OR REPLACE FUNCTION ret_setint() RETURNS SETOF integer AS
