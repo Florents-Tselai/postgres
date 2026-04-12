@@ -513,6 +513,12 @@ select '$.split_part("~@~", 2)'::jsonpath;
  $.split_part("~@~",2)
 (1 row)
 
+select '$.split(",")'::jsonpath;
+   jsonpath   
+--------------
+ $.split(",")
+(1 row)
+
 -- Parse errors
 select '$.replace("hello")'::jsonpath;
 ERROR:  syntax error at or near ")" of jsonpath input
@@ -541,6 +547,22 @@ LINE 1: select '$.split_part("~@~", "hi")'::jsonpath;
 select '$.split_part("~@~", 2, "extra")'::jsonpath;
 ERROR:  syntax error at or near "," of jsonpath input
 LINE 1: select '$.split_part("~@~", 2, "extra")'::jsonpath;
+               ^
+select '$.split()'::jsonpath;
+ERROR:  syntax error at or near ")" of jsonpath input
+LINE 1: select '$.split()'::jsonpath;
+               ^
+select '$.split(",", "null", "extra")'::jsonpath;
+ERROR:  syntax error at or near "," of jsonpath input
+LINE 1: select '$.split(",", "null", "extra")'::jsonpath;
+               ^
+select '$.split(1)'::jsonpath;
+ERROR:  syntax error at or near "1" of jsonpath input
+LINE 1: select '$.split(1)'::jsonpath;
+               ^
+select '$.split(",", 1)'::jsonpath;
+ERROR:  syntax error at or near "1" of jsonpath input
+LINE 1: select '$.split(",", 1)'::jsonpath;
                ^
 select '$.lower("hi")'::jsonpath;
 ERROR:  syntax error at or near """ of jsonpath input
@@ -607,6 +629,12 @@ select '$.split_part'::jsonpath;
     jsonpath    
 ----------------
  $."split_part"
+(1 row)
+
+select '$.split'::jsonpath;
+ jsonpath  
+-----------
+ $."split"
 (1 row)
 
 select '$.ltrim'::jsonpath;

@@ -87,7 +87,7 @@ static bool makeItemLikeRegex(JsonPathParseItem *expr,
 %token	<str>		BIGINT_P BOOLEAN_P DATE_P DECIMAL_P INTEGER_P NUMBER_P
 %token	<str>		STRINGFUNC_P TIME_P TIME_TZ_P TIMESTAMP_P TIMESTAMP_TZ_P
 %token	<str>		STR_REPLACE_P STR_LOWER_P STR_UPPER_P STR_LTRIM_P STR_RTRIM_P STR_BTRIM_P
-					STR_INITCAP_P STR_SPLIT_PART_P STR_TRANSLATE_P
+					STR_INITCAP_P STR_SPLIT_P STR_SPLIT_PART_P STR_TRANSLATE_P
 
 %type	<result>	result
 
@@ -286,6 +286,10 @@ accessor_op:
 		{ $$ = makeItemBinary(jpiStrTranslate, linitial($4), lsecond($4)); }
 	| '.' STR_SPLIT_PART_P '(' str_int_args ')'
 		{ $$ = makeItemBinary(jpiStrSplitPart, linitial($4), lsecond($4)); }
+	| '.' STR_SPLIT_P '(' str_elem ')'
+		{ $$ = makeItemBinary(jpiStrSplit, $4, NULL); }
+	| '.' STR_SPLIT_P '(' str_str_args ')'
+		{ $$ = makeItemBinary(jpiStrSplit, linitial($4), lsecond($4)); }
 	| '.' STR_LTRIM_P '(' opt_str_arg ')'
 		{ $$ = makeItemUnary(jpiStrLtrim, $4); }
 	| '.' STR_RTRIM_P '(' opt_str_arg ')'
@@ -385,6 +389,7 @@ key_name:
 	| STR_REPLACE_P
 	| STR_TRANSLATE_P
 	| STR_SPLIT_PART_P
+	| STR_SPLIT_P
 	| STR_LTRIM_P
 	| STR_RTRIM_P
 	| STR_BTRIM_P
