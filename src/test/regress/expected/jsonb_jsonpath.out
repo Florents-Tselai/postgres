@@ -3115,6 +3115,26 @@ select jsonb_path_query('"abc,def,ghi,jkl"', '$.split_part(",", -2)');
  "ghi"
 (1 row)
 
+-- Test .split()
+select jsonb_path_query('"a,b,c"', '$.split(",")');
+ jsonb_path_query 
+------------------
+ ["a", "b", "c"]
+(1 row)
+
+select jsonb_path_query('"a,,c"', '$.split(",", "")');
+ jsonb_path_query 
+------------------
+ ["a", null, "c"]
+(1 row)
+
+-- proving the output is a real, indexable JSON array
+select jsonb_path_query('"a,b,c"', '$.split(",")[1]');
+ jsonb_path_query 
+------------------
+ "b"
+(1 row)
+
 -- Test string methods play nicely together
 select jsonb_path_query('"hello world"', '$.replace("hello","bye").upper()');
  jsonb_path_query 
