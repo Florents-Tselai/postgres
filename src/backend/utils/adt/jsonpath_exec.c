@@ -1806,6 +1806,7 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 				RETURN_ERROR(ereport(ERROR,
 									 (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 									  errmsg("jsonpath .join() array elements must be strings or nulls"))));
+				break;
 			}
 
 		default:
