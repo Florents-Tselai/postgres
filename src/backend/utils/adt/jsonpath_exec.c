@@ -1699,7 +1699,7 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 				return executeStringInternalMethod(cxt, jsp, jb, found);
 			}
 			break;
-f		case jpiStrJoin:
+		case jpiStrJoin:
 			{
 				JsonPathItem next_elem;
 				JsonbValue	jbv_res;
