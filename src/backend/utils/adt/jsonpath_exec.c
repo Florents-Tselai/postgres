@@ -1709,7 +1709,6 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 				bool		first = true;
 				bool		hasNext;
 
-				/* Extract arguments (Separator is mandatory, Null_string optional) */
 				jspGetLeftArg(jsp, &elem);
 				sep = jspGetString(&elem, NULL);
 
@@ -1719,7 +1718,7 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 					null_replace = jspGetString(&elem, NULL);
 				}
 
-				/*  Validate target is an array */
+				/* Validate target is an array */
 				if (JsonbType(jb) != jbvArray)
 				{
 					RETURN_ERROR(ereport(ERROR,
@@ -1745,7 +1744,8 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 
 						if (v.type == jbvString)
 						{
-							if (!first) appendStringInfoString(&buf, sep);
+							if (!first)
+								appendStringInfoString(&buf, sep);
 							appendBinaryStringInfo(&buf, v.val.string.val, v.val.string.len);
 							first = false;
 						}
@@ -1753,7 +1753,8 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 						{
 							if (null_replace)
 							{
-								if (!first) appendStringInfoString(&buf, sep);
+								if (!first)
+									appendStringInfoString(&buf, sep);
 								appendStringInfoString(&buf, null_replace);
 								first = false;
 							}
@@ -1771,7 +1772,8 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 
 						if (v->type == jbvString)
 						{
-							if (!first) appendStringInfoString(&buf, sep);
+							if (!first)
+								appendStringInfoString(&buf, sep);
 							appendBinaryStringInfo(&buf, v->val.string.val, v->val.string.len);
 							first = false;
 						}
@@ -1779,7 +1781,8 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 						{
 							if (null_replace)
 							{
-								if (!first) appendStringInfoString(&buf, sep);
+								if (!first)
+									appendStringInfoString(&buf, sep);
 								appendStringInfoString(&buf, null_replace);
 								first = false;
 							}
@@ -1799,7 +1802,7 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 
 				return executeNextItem(cxt, jsp, hasNext ? &next_elem : NULL, &jbv_res, found);
 
-			join_error:
+		join_error:
 				RETURN_ERROR(ereport(ERROR,
 									 (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 									  errmsg("jsonpath .join() array elements must be strings or nulls"))));
