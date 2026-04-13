@@ -92,6 +92,8 @@ select '$.btrim("xyz")'::jsonpath;
 select '$.initcap()'::jsonpath;
 select '$.split_part("~@~", 2)'::jsonpath;
 select '$.split(",")'::jsonpath;
+select '$.join(",")'::jsonpath;
+select '$.join(",", "N/A")'::jsonpath;
 
 -- Parse errors
 select '$.replace("hello")'::jsonpath;
@@ -114,8 +116,6 @@ select '$.rtrim(42)'::jsonpath;
 select '$.rtrim("x", "y")'::jsonpath;
 select '$.trim(42)'::jsonpath;
 select '$.trim("x", "y")'::jsonpath;
-
--- Verify method keywords work as object key names
 select '$.lower'::jsonpath;
 select '$.upper'::jsonpath;
 select '$.initcap'::jsonpath;
@@ -125,6 +125,11 @@ select '$.split'::jsonpath;
 select '$.ltrim'::jsonpath;
 select '$.rtrim'::jsonpath;
 select '$.btrim'::jsonpath;
+select '$.join()'::jsonpath;
+select '$.join(",", "replacement", "extra")'::jsonpath;
+select '$.join(42)'::jsonpath;
+select '$.join(true)'::jsonpath;
+select '$.join("x", 123)'::jsonpath;
 
 select '$.time()'::jsonpath;
 select '$.time(6)'::jsonpath;
