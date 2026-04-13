@@ -743,12 +743,40 @@ select jsonb_path_query('"a,,c"', '$.split(",", "")');
 -- proving the output is a real, indexable JSON array
 select jsonb_path_query('"a,b,c"', '$.split(",")[1]');
 
+-- Test .join() method
+select jsonb_path_query('["a", "b", "c"]', '$.join("-")');
+-- Join with null replacement
+select jsonb_path_query('["a", "b", "c"]', '$.join("-", "N/A")');
+-- Null handling: default (skip)
+select jsonb_path_query('["a", null, "c"]', '$.join("-")');
+-- Null handling: replacement
+select jsonb_path_query('["a", null, "c"]', '$.join("-", "N/A")');
+-- Empty array (should return empty string)
+select jsonb_path_query('[]', '$.join("-")');
+-- Pipeline integration: .join().upper()
+select jsonb_path_query('["hello", "world"]', '$.join(" ").upper()');
+-- Pipeline integration: .split().join()
+select jsonb_path_query('"a,b,c"', '$.split(",").join("|")');
+-- Error case: Non-string element (should trigger our ereport)
+select jsonb_path_query('[1, "a"]', '$.join("-")');
+-- Error case: Nested object
+select jsonb_path_query('["a", {"b": 1}]', '$.join("-")');
+-- Error case: Applied to a scalar
+select jsonb_path_query('"not an array"', '$.join("-")');
+-- Lax mode: should still error under current conservative implementation
+select jsonb_path_query('[1, "a"]', 'lax $.join("-")');
+select jsonb_path_query('"not an array"', 'lax $.join("-")');
+-- Silent mode: should suppress errors and return no rows
+select jsonb_path_query('[1, "a"]', '$.join("-")', silent => true);
+select jsonb_path_query('"not an array"', '$.join("-")', silent => true);
+
 -- Test string methods play nicely together
 select jsonb_path_query('"hello world"', '$.replace("hello","bye").upper()');
 select jsonb_path_query('"hElLo WorlD"', '$.lower().upper().lower().replace("hello","bye")');
 select jsonb_path_query('"hElLo WorlD"', '$.upper().lower().upper().replace("HELLO", "BYE")');
 select jsonb_path_query('"hElLo WorlD"', '$.lower().upper().lower().replace("hello","bye") starts with "bye"');
 select jsonb_path_query('"   hElLo WorlD "', '$.btrim().lower().upper().lower().replace("hello","bye") starts with "bye"');
+select jsonb_path_query('"  A,b,C  "', '$.btrim().lower().split(",").join("-").replace("a","x").upper() starts with "X-B"');
 
 -- Test .time()
 select jsonb_path_query('null', '$.time()');

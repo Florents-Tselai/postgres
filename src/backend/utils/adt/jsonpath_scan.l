@@ -406,6 +406,7 @@ static const JsonPathKeyword keywords[] = {
 	{3, false, LAX_P, "lax"},
 	{4, false, DATE_P, "date"},
 	{4, false, FLAG_P, "flag"},
+	{4, false, STR_JOIN_P, "join"},
 	{4, false, LAST_P, "last"},
 	{4, true, NULL_P, "null"},
 	{4, false, SIZE_P, "size"},
