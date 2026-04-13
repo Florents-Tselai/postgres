@@ -1699,6 +1699,117 @@ executeItemOptUnwrapTarget(JsonPathExecContext *cxt, JsonPathItem *jsp,
 				return executeStringInternalMethod(cxt, jsp, jb, found);
 			}
 			break;
+		case jpiStrJoin:
+			{
+				JsonPathItem next_elem;
+				JsonbValue	jbv_res;
+				char	   *sep;
+				char	   *null_replace = NULL;
+				StringInfoData buf;
+				bool		first = true;
+				bool		hasNext;
+
+				jspGetLeftArg(jsp, &elem);
+				sep = jspGetString(&elem, NULL);
+
+				if (jsp->content.args.right != 0)
+				{
+					jspGetRightArg(jsp, &elem);
+					null_replace = jspGetString(&elem, NULL);
+				}
+
+				/* Validate target is an array */
+				if (JsonbType(jb) != jbvArray)
+				{
+					RETURN_ERROR(ereport(ERROR,
+										 (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+										  errmsg("jsonpath item method .join() can only be applied to an array"))));
+				}
+
+				initStringInfo(&buf);
+
+				/* Process the array elements */
+				if (jb->type == jbvBinary)
+				{
+					/* Serialized Binary Blob */
+					JsonbIterator *it;
+					JsonbValue	v;
+					JsonbIteratorToken tok;
+
+					it = JsonbIteratorInit(jb->val.binary.data);
+					while ((tok = JsonbIteratorNext(&it, &v, true)) != WJB_DONE)
+					{
+						if (tok != WJB_ELEM)
+							continue;
+
+						if (v.type == jbvString)
+						{
+							if (!first)
+								appendStringInfoString(&buf, sep);
+							appendBinaryStringInfo(&buf, v.val.string.val, v.val.string.len);
+							first = false;
+						}
+						else if (v.type == jbvNull)
+						{
+							if (null_replace)
+							{
+								if (!first)
+									appendStringInfoString(&buf, sep);
+								appendStringInfoString(&buf, null_replace);
+								first = false;
+							}
+						}
+						else
+						{
+							RETURN_ERROR(ereport(ERROR,
+												 (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+												  errmsg("jsonpath .join() array elements must be strings or nulls"))));
+						}
+					}
+				}
+				else
+				{
+					/* Recursive Tree (jbvArray) */
+					for (int i = 0; i < jb->val.array.nElems; i++)
+					{
+						JsonbValue *v = &jb->val.array.elems[i];
+
+						if (v->type == jbvString)
+						{
+							if (!first)
+								appendStringInfoString(&buf, sep);
+							appendBinaryStringInfo(&buf, v->val.string.val, v->val.string.len);
+							first = false;
+						}
+						else if (v->type == jbvNull)
+						{
+							if (null_replace)
+							{
+								if (!first)
+									appendStringInfoString(&buf, sep);
+								appendStringInfoString(&buf, null_replace);
+								first = false;
+							}
+						}
+						else
+						{
+							RETURN_ERROR(ereport(ERROR,
+												 (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+												  errmsg("jsonpath .join() array elements must be strings or nulls"))));
+						}
+					}
+				}
+
+				jbv_res.type = jbvString;
+				jbv_res.val.string.val = buf.data;
+				jbv_res.val.string.len = buf.len;
+
+				hasNext = jspGetNext(jsp, &next_elem);
+				if (!hasNext && !found)
+					return jperOk;
+
+				return executeNextItem(cxt, jsp, hasNext ? &next_elem : NULL, &jbv_res, found);
+			}
 
 		default:
 			elog(ERROR, "unrecognized jsonpath item type: %d", jsp->type);

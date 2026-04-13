@@ -115,6 +115,7 @@ typedef enum JsonPathItemType
 	jpiTimeTz,					/* .time_tz() item method */
 	jpiTimestamp,				/* .timestamp() item method */
 	jpiTimestampTz,				/* .timestamp_tz() item method */
+	jpiStrJoin,					/* .join() item method */
 	jpiStrReplace,				/* .replace() item method */
 	jpiStrLower,				/* .lower() item method */
 	jpiStrUpper,				/* .upper() item method */

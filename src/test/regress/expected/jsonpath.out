@@ -519,6 +519,18 @@ select '$.split(",")'::jsonpath;
  $.split(",")
 (1 row)
 
+select '$.join(",")'::jsonpath;
+  jsonpath   
+-------------
+ $.join(",")
+(1 row)
+
+select '$.join(",", "N/A")'::jsonpath;
+      jsonpath      
+--------------------
+ $.join(",", "N/A")
+(1 row)
+
 -- Parse errors
 select '$.replace("hello")'::jsonpath;
 ERROR:  syntax error at or near ")" of jsonpath input
@@ -655,6 +667,26 @@ select '$.btrim'::jsonpath;
  $."btrim"
 (1 row)
 
+select '$.join()'::jsonpath;
+ERROR:  syntax error at or near ")" of jsonpath input
+LINE 1: select '$.join()'::jsonpath;
+               ^
+select '$.join(",", "replacement", "extra")'::jsonpath;
+ERROR:  syntax error at or near "," of jsonpath input
+LINE 1: select '$.join(",", "replacement", "extra")'::jsonpath;
+               ^
+select '$.join(42)'::jsonpath;
+ERROR:  syntax error at or near "42" of jsonpath input
+LINE 1: select '$.join(42)'::jsonpath;
+               ^
+select '$.join(true)'::jsonpath;
+ERROR:  syntax error at end of jsonpath input
+LINE 1: select '$.join(true)'::jsonpath;
+               ^
+select '$.join("x", 123)'::jsonpath;
+ERROR:  syntax error at or near "123" of jsonpath input
+LINE 1: select '$.join("x", 123)'::jsonpath;
+               ^
 select '$.time()'::jsonpath;
  jsonpath 
 ----------
