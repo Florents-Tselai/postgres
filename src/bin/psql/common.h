@@ -44,6 +44,8 @@ extern char *get_conninfo_value(const char *keyword);
 extern void expand_tilde(char **filename);
 extern void clean_extended_state(void);
 
+extern const char *session_search_path(void);
+
 extern bool recognized_connection_string(const char *connstr);
 
 #endif							/* COMMON_H */
