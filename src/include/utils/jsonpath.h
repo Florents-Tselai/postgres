@@ -115,6 +115,7 @@ typedef enum JsonPathItemType
 	jpiTimeTz,					/* .time_tz() item method */
 	jpiTimestamp,				/* .timestamp() item method */
 	jpiTimestampTz,				/* .timestamp_tz() item method */
+	jpiStrJoin,					/* .join() item method */
 	jpiStrReplace,				/* .replace() item method */
 	jpiStrLower,				/* .lower() item method */
 	jpiStrUpper,				/* .upper() item method */
@@ -123,6 +124,8 @@ typedef enum JsonPathItemType
 	jpiStrBtrim,				/* .btrim() item method */
 	jpiStrInitcap,				/* .initcap() item method */
 	jpiStrSplitPart,			/* .split_part() item method */
+	jpiStrSplit,				/* .split() item method */
+	jpiStrTranslate,			/* .translate() item method */
 } JsonPathItemType;
 
 /* XQuery regex mode flags for LIKE_REGEX predicate */
