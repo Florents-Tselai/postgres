@@ -188,6 +188,11 @@ get_prompt(promptStatus_t prompt_status, ConditionalStack cstack)
 							strlcpy(buf, service_name, sizeof(buf));
 					}
 					break;
+				/* search_path */
+				case 'S':
+					if (pset.db && PQparameterStatus(pset.db, "search_path"))
+						strlcpy(buf, session_search_path(), sizeof(buf));
+					break;
 					/* backend pid */
 				case 'p':
 					if (pset.db)
